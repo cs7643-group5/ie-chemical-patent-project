@@ -1,0 +1,5 @@
+data/chemu.ner.test/
+data/dev/
+data/train/
+.DS_Store
+.idea/

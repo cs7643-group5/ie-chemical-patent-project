@@ -1,8 +1,25 @@
-from nltk.tokenize import WhitespaceTokenizer, sent_tokenize
+from nltk.tokenize import WhitespaceTokenizer
 from nltk.tokenize.punkt import PunktSentenceTokenizer
-import re
+
 import pdb
+
+
+from functools import partial
+from transformers import AutoTokenizer, AutoModelForMaskedLM
+
+
+import torch
+
+import numpy as np
+
+import re
 import os
+
+from io import open
+
+
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
 
 
 def read_brat_format(ann_filename, txt_filename):
@@ -42,21 +59,21 @@ def read_brat_format(ann_filename, txt_filename):
 
             # if a token corresponding to the next sequence is reached increase z and append END token
             if span_b >= sent_spans[z][1]:
-                sentences[z].append('-END-')
-                tags[z].append('END')
+                sentences[z].append('[SEP]')
+                tags[z].append('SEP')
                 z += 1
 
-            # if the current sentence is empty place the START token
+            #if the current sentence is empty place the START token
             if len(sentences[z]) == 0:
-                sentences[z] = ['-START-']
-                tags[z] = ['START']
+                sentences[z] = ['[CLS]']
+                tags[z] = ['CLS']
 
             sentences[z].append(word)
             tags[z].append(tag)
 
         # last iterations ending tokens will be missing so have to add in here
-        sentences[z].append('-END-')
-        tags[z].append('END')
+        sentences[z].append('[SEP]')
+        tags[z].append('SEP')
 
     else:
         ''' need a more efficient way to run through test snippets also not sure yet what format we need for test '''
@@ -114,10 +131,83 @@ def read_folder(path, labels=True):
     return sents_all, tags_all
 
 
+def map2ind(tags):
+    tag2i = {t: i+2 for i, t in enumerate(set(tag for sent in tags for tag in sent))}
+    i2tag = {i:t for t, i in tag2i.items()}
+    return tag2i, i2tag
+
+
+
+class PatentDataset(Dataset):
+    def __init__(self, data, target):
+        self.data = data
+        self.target = target
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx], self.target[idx]
+
+
+def transformer_collate_fn(batch, tokenizer, tag2id):
+
+    bert_vocab = tokenizer.get_vocab()
+    bert_pad_token = bert_vocab['[PAD]']
+
+    sentences, labels = [], []
+
+    for data, target in batch:
+        tokenized_label = [tag2id[tag] for tag in target]
+        tokenized_sent = tokenizer.convert_tokens_to_ids(data)
+
+        if len(tokenized_sent) != len(tokenized_label):
+            raise Exception("target tags are not the same length as the input sequence")
+
+        sentences.append(torch.tensor(tokenized_sent))
+        labels.append(torch.tensor(tokenized_label))
+
+    sentences = pad_sequence(sentences, batch_first=True, padding_value=bert_pad_token)
+    labels = pad_sequence(labels, batch_first=True, padding_value=bert_pad_token)
+
+    return sentences, labels
+
+
+def load_biobert(name):
+
+    tokenizer = AutoTokenizer.from_pretrained(name)
+    model = AutoModelForMaskedLM.from_pretrained(name)
+
+    return tokenizer, model
+
+
 def load_data():
 
     train_sents, train_tags = read_folder('data/train/')
     val_sents, val_tags = read_folder('data/dev/')
     # test_sents, _ = read_folder('data/chemu.ner.test/', labels=False)
 
-    return (train_sents, train_tags), (val_sents, val_tags)
+    model_name = "dmis-lab/biobert-base-cased-v1.2"
+
+    biobert_tokenizer, biobert_model = load_biobert(model_name)
+
+    tag2i_train, i2tag_train = map2ind(train_tags)
+    tag2i_val, i2tag_val = map2ind(val_tags)
+
+    train_dataset = PatentDataset(train_sents, train_tags)
+    train_dataloader = DataLoader(train_dataset, batch_size=32,
+                                  collate_fn=partial(transformer_collate_fn,
+                                                     tokenizer=biobert_tokenizer,
+                                                     tag2id=tag2i_train),
+                                  shuffle=True)
+
+    val_dataset = PatentDataset(val_sents, val_tags)
+    val_dataloader = DataLoader(val_dataset, batch_size=32,
+                                  collate_fn=partial(transformer_collate_fn,
+                                                     tokenizer=biobert_tokenizer,
+                                                     tag2id=tag2i_val),
+                                  shuffle=True)
+
+    return train_dataloader, val_dataloader
+
+

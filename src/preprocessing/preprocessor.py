@@ -137,7 +137,6 @@ def map2ind(tags):
     return tag2i, i2tag
 
 
-
 class PatentDataset(Dataset):
     def __init__(self, data, target):
         self.data = data
@@ -155,7 +154,7 @@ def transformer_collate_fn(batch, tokenizer, tag2id):
     bert_vocab = tokenizer.get_vocab()
     bert_pad_token = bert_vocab['[PAD]']
 
-    sentences, labels = [], []
+    sentences, mask, labels = [], [], []
 
     for data, target in batch:
         tokenized_label = [tag2id[tag] for tag in target]
@@ -164,13 +163,15 @@ def transformer_collate_fn(batch, tokenizer, tag2id):
         if len(tokenized_sent) != len(tokenized_label):
             raise Exception("target tags are not the same length as the input sequence")
 
+        mask.append(torch.ones(len(tokenized_sent)))
         sentences.append(torch.tensor(tokenized_sent))
         labels.append(torch.tensor(tokenized_label))
 
     sentences = pad_sequence(sentences, batch_first=True, padding_value=bert_pad_token)
     labels = pad_sequence(labels, batch_first=True, padding_value=bert_pad_token)
+    mask = pad_sequence(mask, batch_first=True, padding_value=bert_pad_token)
 
-    return sentences, labels
+    return sentences, mask, labels
 
 
 def load_biobert(name):

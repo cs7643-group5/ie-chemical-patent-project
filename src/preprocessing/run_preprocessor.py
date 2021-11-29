@@ -32,6 +32,9 @@ model_name = "dmis-lab/biobert-base-cased-v1.2"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForMaskedLM.from_pretrained(model_name).to(device)
 optim = AdamW(model.parameters(), lr=5e-5)
+
+
+
 def validate(datashape):
     model.eval()
     
@@ -58,9 +61,9 @@ def measure_results(results, label_tags):
     pred_tags = [item for sublist1 in label_tags for sublist0 in sublist1 for item in sublist0]
 
     for tag in i2tag_train.values():
-        tp = 0
-        fp = 0
-        fn = 0
+        
+        tp, fp, fn = 0, 0, 0
+
         for result, label in zip(true_tags, pred_tags):
             if result == tag and label == tag:
                 tp += 1
@@ -92,6 +95,8 @@ for epoch in range(3):
     results, label_tags = validate(input_ids.shape)
     measure_results(results, label_tags)
 
+    
+    
 model.eval()
 outputs = outputs.logits.argmax(dim = 2)
 a, b = outputs.shape

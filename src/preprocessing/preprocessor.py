@@ -26,7 +26,7 @@ def read_brat_format(ann_filename, txt_filename):
 
     # read in raw text from patent snippet
     snippet = ""
-    for line in open(txt_filename).readlines():
+    for line in open(txt_filename, encoding="utf8").readlines():
         snippet += line
 
     if ann_filename is not None:
@@ -35,7 +35,7 @@ def read_brat_format(ann_filename, txt_filename):
 
         # go through each line of the annotation file and place the tag over every character position in char_tags
         # this will repeat the tag multiple times which is inefficient but it's a good way to get the data in the right form
-        for line in open(ann_filename).readlines():
+        for line in open(ann_filename, encoding="utf8").readlines():
             line_seg = line.split()
             tag = line_seg[1]
             start_i = int(line_seg[2])
@@ -132,8 +132,11 @@ def read_folder(path, labels=True):
 
 
 def map2ind(tags):
-    tag2i = {t: i+2 for i, t in enumerate(set(tag for sent in tags for tag in sent))}
+    tag2i = {t: i+2 for i, t in enumerate(set(tag for sent in tags for tag in sent))}  
+    tag2i['M'] = 0
+    tag2i['SPECIAL!'] = 1
     i2tag = {i:t for t, i in tag2i.items()}
+
     return tag2i, i2tag
 
 
@@ -209,6 +212,6 @@ def load_data():
                                                      tag2id=tag2i_val),
                                   shuffle=True)
 
-    return train_dataloader, val_dataloader
+    return tag2i_train, i2tag_train, tag2i_val, i2tag_val, train_dataloader, val_dataloader
 
 

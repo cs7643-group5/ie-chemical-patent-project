@@ -19,12 +19,12 @@ from torchcrf import CRF
 import torch.nn as nn
 
 # Torch Device
-if torch.cuda.is_available():
-    device = torch.device('cuda')
-    torch.cuda.empty_cache()
-else:
-    device = torch.device('cpu')
-# device = torch.device('cpu')
+# if torch.cuda.is_available():
+#     device = torch.device('cuda')
+#     torch.cuda.empty_cache()
+# else:
+#     device = torch.device('cpu')
+device = torch.device('cpu')
 print("Device: ", device)
 
 
@@ -60,83 +60,6 @@ def measure_results(results, label_tags):
         f1 = round((2 * precision * recall) / (precision + recall + 1e-6), 4)
 
         print("Tag: ", tag, ", Precision: ", precision, ", Recall: ", recall, ", F1: ", f1)
-
-
-
-
-
-
-######################################################################
-# CRF
-######################################################################
-
-# Iterating over the validation_dataloader and getting the emissions. Using the emissions, we run crf.decode
-# def crf_decoder():
-    
-#     results_full = []
-#     labels_full = []
-
-#     for input_ids, mask, labels in val_dataloader:
-#         emmissions = model.return_emissions(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
-#         outputs = model.crf.decode(emissions)
-#         a, b = len(outputs), len(outputs[0])
-        
-#         results = [[i2tag_val[outputs[i][j]] for j in range(b)] for i in range(a)]
-#         label_tags = [[i2tag_val[labels[i][j]] for j in range(b)] for i in range(a)] 
-        
-#         results_full.append(results)
-#         labels_full.append(label_tags)
-
-#     return results_full, labels_full
-
-
-
-# # CRF TRAINING SCRIPT
-# class CustomBERTModel(nn.Module):
-#     def __init__(self, num_tags = 12):
-#         super(CustomBERTModel, self).__init__()
-#         self.bert = AutoModelForMaskedLM.from_pretrained(model_name)
-#         self.linear1 = nn.Linear(28996, num_tags)
-#         self.crf = CRF(num_tags+ 1)
-
-#     def return_emissions(self, input_ids, mask, label, inference = True):
-#         if inference == True:
-#             self.bert.eval()
-#         outputs = self.bert(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
-#         emissions = self.linear1(outputs.logits)
-#         return emissions
-
-#     def compute_loss(self, input_ids, mask, labels):
-#         outputs = self.bert(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
-#         emissions = self.linear1(outputs.logits)
-#         print(emissions.shape)
-#         loss = self.crf(emissions.to(device), labels.to(device))
-#         return -loss
-
-# model = CustomBERTModel(num_tags = 12) # You can pass the parameters if required to have more flexible model
-# model.to(torch.device(device)) ## can be gpu
-
-# optim = AdamW(model.parameters(), lr=5e-5)
-
-# for epoch in range(3):
-#     print("Epoch: ", epoch)
-
-#     for input_ids, mask, labels in train_dataloader:
-#         optim.zero_grad()
-#         loss = model.compute_loss(input_ids, mask, labels)
-#         loss.backward()
-#         optim.step()
-    
-#     print(f"loss on epoch {epoch} = {loss}")
-    
-#     results, label_tags = crf_decoder()
-#     measure_results(results, label_tags)
-
-
-
-
-
-
 
 
 
@@ -189,32 +112,87 @@ def measure_results(results, label_tags):
 
 
 
-
-
-
-
-
-
-
-
-
 ######################################################################
 # Vanilla w/ Classification Layer
 ######################################################################
 
-def validate():
-    model.eval()
+# def validate():
+#     model.eval()
+    
+#     results_full = []
+#     labels_full = []
+
+#     for input_ids, mask, labels in val_dataloader:
+#         outputs = model.forward(input_ids, mask, labels)
+#         outputs = outputs.argmax(dim = -1)
+#         a, b = outputs.shape
+        
+#         results = [[i2tag_val[outputs[i, j].item()] for j in range(b)] for i in range(a)]
+#         label_tags = [[i2tag_val[labels[i, j].item()] for j in range(b)] for i in range(a)] 
+        
+#         results_full.append(results)
+#         labels_full.append(label_tags)
+
+#     return results_full, labels_full
+
+
+# class CustomBERTModel(nn.Module):
+#     def __init__(self, num_tags = num_tags):
+#         super(CustomBERTModel, self).__init__()
+#         self.bert = AutoModelForMaskedLM.from_pretrained(model_name)
+#         self.linear1 = nn.Linear(28996, num_tags, dropout = dropout)
+
+#     def forward(self, input_ids, mask, labels):
+#         outputs = self.bert(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
+#         outputs = self.linear1(outputs.logits)
+#         return outputs
+
+
+# model = CustomBERTModel(num_tags = num_tags)
+# model.to(torch.device(device))
+# optim = AdamW(model.parameters(), lr=1e-5)
+# criterion = nn.CrossEntropyLoss() ## If required define your own criterion
+
+# # # BASELINE TRAINING SCRIPT w/ modifications
+# for epoch in range(10):
+#     print("Epoch: ", epoch)
+
+#     model.train()
+#     for input_ids, mask, labels in train_dataloader:
+#         optim.zero_grad()
+#         outputs = model.forward(input_ids, mask, labels)
+#         N, D, C = outputs.shape
+#         outputs = outputs.view(N*D, C)
+#         labels = labels.view(N*D)
+#         loss = criterion(outputs.cuda(), labels.cuda())
+#         loss.backward()
+#         optim.step()
+    
+#     print(f"loss on epoch {epoch} = {loss}")
+#     results, label_tags = validate()
+#     measure_results(results, label_tags)
+
+
+
+
+######################################################################
+# CRF
+######################################################################
+
+# Iterating over the validation_dataloader and getting the emissions. Using the emissions, we run crf.decode
+def crf_decoder():
     
     results_full = []
     labels_full = []
 
     for input_ids, mask, labels in val_dataloader:
-        outputs = model.forward(input_ids, mask, labels)
-        outputs = outputs.argmax(dim = -1)
-        a, b = outputs.shape
+        emissions = model.return_emissions(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
+        outputs = model.crf.decode(emissions)
+        a, b = len(outputs), len(outputs[0])
         
-        results = [[i2tag_val[outputs[i, j].item()] for j in range(b)] for i in range(a)]
-        label_tags = [[i2tag_val[labels[i, j].item()] for j in range(b)] for i in range(a)] 
+        #print(a, b, len(labels), len(labels[0]))
+        results = [[i2tag_val[outputs[i][j]] for j in range(b)] for i in range(a)]
+        label_tags = [[i2tag_val[labels[i][j].item()] for j in range(a)] for i in range(b)] 
         
         results_full.append(results)
         labels_full.append(label_tags)
@@ -222,44 +200,45 @@ def validate():
     return results_full, labels_full
 
 
+
+# CRF TRAINING SCRIPT
 class CustomBERTModel(nn.Module):
-    def __init__(self, num_tags = num_tags):
+    def __init__(self, num_tags = 12):
         super(CustomBERTModel, self).__init__()
         self.bert = AutoModelForMaskedLM.from_pretrained(model_name)
-        self.linear1 = nn.Linear(28996, num_tags, dropout = dropout)
+        self.linear1 = nn.Linear(28996, num_tags)
+        self.crf = CRF(num_tags)
+
+    def return_emissions(self, input_ids, attention_mask, labels, inference = True):
+        if inference == True:
+            self.bert.eval()
+        outputs = self.bert(input_ids.to(device), attention_mask = attention_mask.to(device), labels=labels.to(device))
+        emissions = self.linear1(outputs.logits)
+        return emissions
 
     def forward(self, input_ids, mask, labels):
         outputs = self.bert(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
-        outputs = self.linear1(outputs.logits)
-        return outputs
+        emissions = self.linear1(outputs.logits)
+        #print(emissions.shape)
+        loss = self.crf(emissions.to(device), labels.to(device))
+        return -loss
 
+model = CustomBERTModel(num_tags = num_tags) # You can pass the parameters if required to have more flexible model
+model.to(torch.device(device)) ## can be gpu
+optim = AdamW(model.parameters(), lr=5e-5)
 
-model = CustomBERTModel(num_tags = num_tags)
-model.to(torch.device(device))
-optim = AdamW(model.parameters(), lr=1e-5)
-criterion = nn.CrossEntropyLoss() ## If required define your own criterion
-
-# # BASELINE TRAINING SCRIPT w/ modifications
-for epoch in range(10):
+for epoch in range(3):
     print("Epoch: ", epoch)
-
-    model.train()
     for input_ids, mask, labels in train_dataloader:
         optim.zero_grad()
-        outputs = model.forward(input_ids, mask, labels)
-        N, D, C = outputs.shape
-        outputs = outputs.view(N*D, C)
-        labels = labels.view(N*D)
-        loss = criterion(outputs.cuda(), labels.cuda())
+        loss = model.forward(input_ids, mask, labels)
         loss.backward()
         optim.step()
     
     print(f"loss on epoch {epoch} = {loss}")
-    results, label_tags = validate()
-    measure_results(results, label_tags)
-
-
     
+    results, label_tags = crf_decoder()
+    measure_results(results, label_tags)
 
 
 

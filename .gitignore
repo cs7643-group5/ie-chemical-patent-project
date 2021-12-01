@@ -1,6 +1,8 @@
 data/chemu.ner.test/
 data/dev/
 data/train/
+data/ee_dev/
+data/ee_train/
 .DS_Store
 .idea/
 src/preprocessing/__pycache__/preprocessor.cpython-38.pyc

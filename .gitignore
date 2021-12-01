@@ -5,4 +5,4 @@ data/ee_dev/
 data/ee_train/
 .DS_Store
 .idea/
-src/preprocessing/__pycache__/preprocessor.cpython-38.pyc
+src/preprocessing/__pycache__/

@@ -152,7 +152,7 @@ class PatentDataset(Dataset):
         return self.data[idx], self.target[idx]
 
 
-def transformer_collate_fn(batch, tokenizer, tag2id):
+def transformer_collate_fn(batch, tokenizer, tag2id, use_wordpiece=False):
 
     bert_vocab = tokenizer.get_vocab()
     bert_pad_token = bert_vocab['[PAD]']
@@ -160,8 +160,26 @@ def transformer_collate_fn(batch, tokenizer, tag2id):
     sentences, mask, labels = [], [], []
 
     for data, target in batch:
-        tokenized_label = [tag2id[tag] for tag in target]
-        tokenized_sent = tokenizer.convert_tokens_to_ids(data)
+
+        tokenized_label_ground = [tag2id[tag] for tag in target]
+
+        if use_wordpiece:
+            tokenized_label_ground[0] = -100 #[CLS] token
+            tokenized_label_ground[-1] = -100 #[SEP] token
+            tokenized = tokenizer(data, is_split_into_words=True,
+                                  return_offsets_mapping=True,
+                                  add_special_tokens=False)
+            tokenized_sent = tokenized.input_ids
+            offset_mappings = tokenized.offset_mapping
+            tokenized_label = [-100] * len(tokenized_sent)
+            z = 0
+            for i, offset in enumerate(offset_mappings):
+                if offset[0] == 0:
+                    tokenized_label[i] == tokenized_label_ground[z]
+                    z += 1
+        else:
+            tokenized_label = tokenized_label_ground
+            tokenized_sent = tokenizer.convert_tokens_to_ids(data)
 
         if len(tokenized_sent) != len(tokenized_label):
             raise Exception("target tags are not the same length as the input sequence")
@@ -202,14 +220,16 @@ def load_data():
     train_dataloader = DataLoader(train_dataset, batch_size=32,
                                   collate_fn=partial(transformer_collate_fn,
                                                      tokenizer=biobert_tokenizer,
-                                                     tag2id=tag2i_train),
+                                                     tag2id=tag2i_train,
+                                                     use_wordpiece=False),
                                   shuffle=True)
 
     val_dataset = PatentDataset(val_sents, val_tags)
     val_dataloader = DataLoader(val_dataset, batch_size=32,
                                   collate_fn=partial(transformer_collate_fn,
                                                      tokenizer=biobert_tokenizer,
-                                                     tag2id=tag2i_val),
+                                                     tag2id=tag2i_val,
+                                                     use_wordpiece=False),
                                   shuffle=True)
 
     return tag2i_train, i2tag_train, tag2i_val, i2tag_val, train_dataloader, val_dataloader

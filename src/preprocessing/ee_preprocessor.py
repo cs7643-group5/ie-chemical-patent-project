@@ -33,7 +33,8 @@ def create_re_examples(tag2wid_fixed, ids2arg,
                        sentences,
                        trigger_set, entity_set,
                        previous_tagid, w, z,
-                       ee_sentences_fixed, ee_labels_fixed):
+                       ee_sentences_fixed, ee_labels_fixed,
+                       replace_entities=True):
 
     tag2wid = tag2wid_fixed.copy()
     ee_sentences = ee_sentences_fixed.copy()
@@ -54,18 +55,38 @@ def create_re_examples(tag2wid_fixed, ids2arg,
             trig_start = tag2wid[trigger_id + 'start']
             trig_end = tag2wid[trigger_id + 'end'] + 1  # add one to adjust for first insert of start
 
+            adjust_sent.insert(trig_start, '$')
+            adjust_sent.insert(trig_end, '$')
+
+            if replace_entities:
+                trig_num_pops = trig_end-trig_start-1
+                # alt method
+                # for _ in range(trig_num_pops):
+                #     adjust_sent.pop(trig_start+1)
+                del adjust_sent[trig_start+1:trig_end]
+                adjust_sent.insert(trig_start+1, trigger)
+
             ent_start = tag2wid[entity_id + 'start']
             ent_end = tag2wid[entity_id + 'end'] + 1  # add one to adjust for first insert of start
 
-            # account for shift in the indices from the trigger inserts
-            if ent_start > trig_start:
+            # account for shift in the indices from the trigger inserts or deletes
+            if ent_start > trig_start and not replace_entities:
                 ent_start += 2
                 ent_end += 2
+            elif ent_start > trig_start and replace_entities:
+                ent_start += 2 + 1 - trig_num_pops
+                ent_end += 2 + 1 - trig_num_pops
 
-            adjust_sent.insert(trig_start, '$')
-            adjust_sent.insert(trig_end, '$')
             adjust_sent.insert(ent_start, '#')
             adjust_sent.insert(ent_end, '#')
+
+            if replace_entities:
+                # ent_num_pops = ent_end - ent_start - 1
+                # alt method
+                # for _ in range(ent_num_pops):
+                #     adjust_sent.pop(ent_start + 1)
+                del adjust_sent[ent_start + 1:ent_end]
+                adjust_sent.insert(ent_start + 1, entity)
 
             ee_sentences.append(adjust_sent)
             ee_labels.append(ids2arg[(trigger_id, entity_id)])

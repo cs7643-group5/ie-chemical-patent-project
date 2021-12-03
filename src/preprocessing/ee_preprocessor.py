@@ -55,8 +55,8 @@ def create_re_examples(tag2wid_fixed, ids2arg,
             trig_start = tag2wid[trigger_id + 'start']
             trig_end = tag2wid[trigger_id + 'end'] + 1  # add one to adjust for first insert of start
 
-            adjust_sent.insert(trig_start, '$')
-            adjust_sent.insert(trig_end, '$')
+            adjust_sent.insert(trig_start, '[$]')
+            adjust_sent.insert(trig_end, '[/$]')
 
             if replace_entities:
                 trig_num_pops = trig_end-trig_start-1
@@ -77,8 +77,8 @@ def create_re_examples(tag2wid_fixed, ids2arg,
                 ent_start += 2 + 1 - trig_num_pops
                 ent_end += 2 + 1 - trig_num_pops
 
-            adjust_sent.insert(ent_start, '#')
-            adjust_sent.insert(ent_end, '#')
+            adjust_sent.insert(ent_start, '[#]')
+            adjust_sent.insert(ent_end, '[/#]')
 
             if replace_entities:
                 # ent_num_pops = ent_end - ent_start - 1

@@ -6,7 +6,7 @@ import pdb
 
 
 from functools import partial
-from transformers import AutoTokenizer, AutoModelForMaskedLM
+from transformers import AutoTokenizer, AutoModel
 
 
 import torch
@@ -236,6 +236,103 @@ def read_folder_ee(path):
     return sents_all, tags_all, sents_ee_all, labels_ee_all
 
 
+# def map2ind(tags):
+#     #tag2i = {t: i+2 for i, t in enumerate(set(tag for sent in tags for tag in sent))}
+#     tag2i = {}
+#     tag2i['O'] = 0
+#     tag2i['ARGM'] = 1
+#     tag2i['ARG1'] = 2
+#     i2tag = {i:t for t, i in tag2i.items()}
+#
+#     return tag2i, i2tag
+
+
+class PatentDataset(Dataset):
+    def __init__(self, data, target):
+        self.data = data
+        self.target = target
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx], self.target[idx]
+
+
+def transformer_collate_fn(batch, tokenizer, label2id, use_wordpiece=False):
+
+    # pdb.set_trace()
+
+    tokenizer.add_special_tokens({'additional_special_tokens': ['[$]', '[/$]', '[#]', '[/#]']})
+    bert_vocab = tokenizer.get_vocab()
+    bert_pad_token = bert_vocab['[PAD]']
+    trig_start_token = bert_vocab['[$]']
+    trig_end_token = bert_vocab['[/$]']
+    ent_start_token = bert_vocab['[#]']
+    ent_end_token = bert_vocab['[/#]']
+    unk_token = bert_vocab['[UNK]']
+
+    sentences, mask, labels, trig_mask, ent_mask = [], [], [], [], []
+
+    for data, target in batch:
+
+        tokenized_label = label2id[target]
+
+        if use_wordpiece:
+            tokenized = tokenizer(data, is_split_into_words=True,
+                                  return_offsets_mapping=True,
+                                  add_special_tokens=False)
+            tokenized_sent = tokenized.input_ids
+        else:
+            tokenized_sent = tokenizer.convert_tokens_to_ids(data)
+
+        if len(tokenized_sent) == 512:
+            raise Exception("maximum sentence length reached. sentence may have been truncated and could be missing"
+                            "relation tags")
+
+        mask.append(torch.ones(len(tokenized_sent)))
+        sentences.append(torch.tensor(tokenized_sent))
+        labels.append(torch.tensor(tokenized_label))
+        trig_mask.append((tokenized_sent.index(trig_start_token),
+                         tokenized_sent.index(trig_end_token)))
+        ent_mask.append((tokenized_sent.index(ent_start_token),
+                         tokenized_sent.index(ent_end_token)))
+
+    sentences = pad_sequence(sentences, batch_first=True, padding_value=bert_pad_token)
+    mask = pad_sequence(mask, batch_first=True, padding_value=bert_pad_token)
+
+    return sentences, mask, torch.tensor(labels), trig_mask, ent_mask
+
+
+def load_biobert(name):
+
+    tokenizer = AutoTokenizer.from_pretrained(name)
+    model = AutoModel.from_pretrained(name)
+
+    return tokenizer, model
+
 def load_data_ee():
     sentences_train, tags_train, ee_sentences_train, ee_labels_train = read_folder_ee('data/ee_train/')
-    return sentences_train, tags_train, ee_sentences_train, ee_labels_train
+
+    model_name = "dmis-lab/biobert-base-cased-v1.2"
+
+    biobert_tokenizer, biobert_model = load_biobert(model_name)
+    train_dataset_re = PatentDataset(ee_sentences_train, ee_labels_train)
+
+    label2i = dict()
+    label2i['O'] = 0
+    label2i['ARGM'] = 1
+    label2i['ARG1'] = 2
+    #i2label = {i:t for t, i in label2i.items()}
+
+    train_dataloader = DataLoader(train_dataset_re, batch_size=32,
+                                  collate_fn=partial(transformer_collate_fn,
+                                                     tokenizer=biobert_tokenizer,
+                                                     label2id=label2i,
+                                                     use_wordpiece=False),
+                                  shuffle=True)
+
+
+
+    # return sentences_train, tags_train, ee_sentences_train, ee_labels_train
+    return train_dataloader

@@ -262,8 +262,6 @@ class PatentDataset(Dataset):
 def transformer_collate_fn(batch, tokenizer, label2id, use_wordpiece=False):
 
     # pdb.set_trace()
-
-    tokenizer.add_special_tokens({'additional_special_tokens': ['[$]', '[/$]', '[#]', '[/#]']})
     bert_vocab = tokenizer.get_vocab()
     bert_pad_token = bert_vocab['[PAD]']
     trig_start_token = bert_vocab['[$]']
@@ -304,20 +302,23 @@ def transformer_collate_fn(batch, tokenizer, label2id, use_wordpiece=False):
     return sentences, mask, torch.tensor(labels), trig_mask, ent_mask
 
 
-def load_biobert(name):
+# def load_biobert(name):
+#
+#     tokenizer = AutoTokenizer.from_pretrained(name)
+#     model = AutoModel.from_pretrained(name)
+#
+#     return tokenizer, model
 
-    tokenizer = AutoTokenizer.from_pretrained(name)
-    model = AutoModel.from_pretrained(name)
-
-    return tokenizer, model
-
-def load_data_ee():
+def load_data_ee(model_name):
     sentences_train, tags_train, ee_sentences_train, ee_labels_train = read_folder_ee('data/ee_train/')
+    sentences_val, tags_val, ee_sentences_val, ee_labels_val = read_folder_ee('data/ee_train/')
 
-    model_name = "dmis-lab/biobert-base-cased-v1.2"
-
-    biobert_tokenizer, biobert_model = load_biobert(model_name)
     train_dataset_re = PatentDataset(ee_sentences_train, ee_labels_train)
+    val_dataset_re = PatentDataset(ee_sentences_val, ee_labels_val)
+
+    biobert_tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # add relation tokens
+    biobert_tokenizer.add_special_tokens({'additional_special_tokens': ['[$]', '[/$]', '[#]', '[/#]']})
 
     label2i = dict()
     label2i['O'] = 0
@@ -332,7 +333,14 @@ def load_data_ee():
                                                      use_wordpiece=False),
                                   shuffle=True)
 
+    val_dataloader = DataLoader(val_dataset_re, batch_size=32,
+                                  collate_fn=partial(transformer_collate_fn,
+                                                     tokenizer=biobert_tokenizer,
+                                                     label2id=label2i,
+                                                     use_wordpiece=False),
+                                  shuffle=True)
+
 
 
     # return sentences_train, tags_train, ee_sentences_train, ee_labels_train
-    return train_dataloader
+    return train_dataloader, val_dataloader, biobert_tokenizer

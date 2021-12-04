@@ -9,9 +9,13 @@ import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 import time
+import pickle
+import argparse
 
 from re_models.custom_model import RelationClassifier
 from preprocessing import ee_preprocessor
+# from preprocessing.ee_preprocessor import PatentDataset
+# from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
 
 
@@ -124,7 +128,28 @@ def train(model,
 if __name__ == '__main__':
     model_name = "dmis-lab/biobert-base-cased-v1.2"
     bert_model = AutoModel.from_pretrained(model_name)
-    train_dataloader, val_dataloader, biobert_tokenizer = ee_preprocessor.load_data_ee(model_name)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--data_size", type=float,
+                        help="pass the percentage of data to use")
+
+    parser.add_argument("-t", "--train_type", type=str,
+                        help="pass training environment for example 'colab'")
+    args = parser.parse_args()
+    data_amount = args.data_size if args.data_size is not None else 1
+    train_type = args.train_type
+    print(f"using {data_amount * 100:.2f}% of training and validation data")
+    print("loading data...")
+    data_start = time.time()
+
+    if train_type == 'colab':
+        with open("data/ee_data.pickle", "rb") as f:
+            data_brat = pickle.load(f)
+        train_dataloader, val_dataloader, biobert_tokenizer = ee_preprocessor.colab_load_data(model_name, data_brat,
+                                                                                              data_size=data_amount)
+    else:
+        train_dataloader, val_dataloader, biobert_tokenizer = ee_preprocessor.load_data_ee(model_name)
+    data_end = time.time()
+    print(f'completed data loading in {(data_end - data_start) / 60:.2f} minutes')
     bert_model.resize_token_embeddings(len(biobert_tokenizer))  # adds 4 to account for relation tokens
 
     # define hyperparameters
@@ -135,7 +160,12 @@ if __name__ == '__main__':
     CLIP = 1.0
 
     # define models, move to device, and initialize weights
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if torch.cuda.is_available():
+        print('using cuda')
+        device = torch.device('cuda')
+    else:
+        print('using cpu')
+        device = torch.device('cpu')
 
     model = RelationClassifier(bert_model).to(device)
     model.apply(init_classification_head_weights)
@@ -144,10 +174,13 @@ if __name__ == '__main__':
 
     optimizer = optim.Adam(model.parameters(), lr=LR)
 
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=10, num_training_steps=N_EPOCHS*len(train_dataloader))
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=10,
+                                                num_training_steps=N_EPOCHS * len(train_dataloader))
 
     print(f'The model has {count_parameters(model):,} trainable parameters')
 
+    print('running initial performance metrics')
+    start_time = time.time()
     train_loss = evaluate(model, train_dataloader, device)
     train_acc = evaluate_acc(model, train_dataloader, device)
 
@@ -158,7 +191,11 @@ if __name__ == '__main__':
     print(f'Initial Train Acc: {train_acc:.3f}')
     print(f'Initial Valid Loss: {valid_loss:.3f}')
     print(f'Initial Valid Acc: {valid_acc:.3f}')
+    end_time = time.time()
+    print(f'completed initial performance metrics in {(end_time - start_time) / 60:.2f} minutes')
 
+    print(f'training for {N_EPOCHS} epochs')
+    train_start_time = time.time()
     for epoch in range(N_EPOCHS):
         start_time = time.time()
         train_loss = train(model, train_dataloader, optimizer, device, CLIP, scheduler)
@@ -173,3 +210,12 @@ if __name__ == '__main__':
         print(f'\tTrain Acc: {train_acc:.3f}')
         print(f'\tValid Loss: {valid_loss:.3f}')
         print(f'\tValid Acc: {valid_acc:.3f}')
+
+    train_end_time = time.time()
+    print(f'completed training in {(train_end_time - train_start_time) / 60:.2f} minutes')
+
+    print('saving model')
+    torch.save(model.state_dict(), "saved_models/re_custom_model.pt")
+    # print('test loading model')
+    # loaded_model = RelationClassifier(bert_model).to(device)
+    # loaded_model.load_state_dict(torch.load("results/re_custom_model.pt", map_location=device))

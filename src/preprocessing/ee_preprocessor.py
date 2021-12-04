@@ -1,13 +1,10 @@
-
 from nltk.tokenize import WhitespaceTokenizer
 from nltk.tokenize.punkt import PunktSentenceTokenizer
 
 import pdb
 
-
 from functools import partial
 from transformers import AutoTokenizer, AutoModel
-
 
 import torch
 
@@ -17,7 +14,6 @@ import re
 import os
 
 from io import open
-
 
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
@@ -35,7 +31,6 @@ def create_re_examples(tag2wid_fixed, ids2arg,
                        previous_tagid, w, z,
                        ee_sentences_fixed, ee_labels_fixed,
                        replace_entities=True):
-
     tag2wid = tag2wid_fixed.copy()
     ee_sentences = ee_sentences_fixed.copy()
     ee_labels = ee_labels_fixed.copy()
@@ -59,12 +54,12 @@ def create_re_examples(tag2wid_fixed, ids2arg,
             adjust_sent.insert(trig_end, '[/$]')
 
             if replace_entities:
-                trig_num_pops = trig_end-trig_start-1
+                trig_num_pops = trig_end - trig_start - 1
                 # alt method
                 # for _ in range(trig_num_pops):
                 #     adjust_sent.pop(trig_start+1)
-                del adjust_sent[trig_start+1:trig_end]
-                adjust_sent.insert(trig_start+1, trigger)
+                del adjust_sent[trig_start + 1:trig_end]
+                adjust_sent.insert(trig_start + 1, trigger)
 
             ent_start = tag2wid[entity_id + 'start']
             ent_end = tag2wid[entity_id + 'end'] + 1  # add one to adjust for first insert of start
@@ -101,11 +96,11 @@ def read_brat_format_ee(ann_filename, txt_filename):
         snippet += line
 
     if ann_filename is not None:
-        #pdb.set_trace()
+        # pdb.set_trace()
 
         # create an array of tags with O
-        char_tags = ['O']*len(snippet)
-        id_tags = ['O']*len(snippet)
+        char_tags = ['O'] * len(snippet)
+        id_tags = ['O'] * len(snippet)
         ids2arg = defaultdict(def_value)
 
         # go through each line of the annotation file and place the tag over every character position in char_tags
@@ -119,19 +114,19 @@ def read_brat_format_ee(ann_filename, txt_filename):
                 tag = line_seg[1]
                 start_i = int(line_seg[2])
                 end_i = int(line_seg[3])
-                char_tags[start_i:end_i] = [tag]*(end_i-start_i)
+                char_tags[start_i:end_i] = [tag] * (end_i - start_i)
                 id_tags[start_i:end_i] = [tag_id] * (end_i - start_i)
             elif tag_id[0] == 'R':
-                #pdb.set_trace()
-                #trigger, entity = re.findall('T\d\d', txt)
+                # pdb.set_trace()
+                # trigger, entity = re.findall('T\d\d', txt)
                 trigger = line_seg[2][5:]
                 entity = line_seg[3][5:]
-                relation = line_seg[1] #re.findall('ARG\w', txt)
+                relation = line_seg[1]  # re.findall('ARG\w', txt)
                 # if len(relation) != 1:
                 #     raise Exception("Debug here: relation size is greater than 1")
                 ids2arg[(trigger, entity)] = relation
 
-        #pdb.set_trace()
+        # pdb.set_trace()
 
         z = 0  # place holder to determine what sentence index on currently
         w = 0  # place holder to determine what word index on currently
@@ -163,10 +158,10 @@ def read_brat_format_ee(ann_filename, txt_filename):
                 sentences[z].append('[SEP]')
                 tags[z].append('SEP')
                 ee_sentences, ee_labels = create_re_examples(tag2wid, ids2arg,
-                                                                              sentences,
-                                                                              trigger_set, entity_set,
-                                                                              previous_tagid, w, z,
-                                                                              ee_sentences, ee_labels)
+                                                             sentences,
+                                                             trigger_set, entity_set,
+                                                             previous_tagid, w, z,
+                                                             ee_sentences, ee_labels)
 
                 # reset variables for next sentence
                 trigger_set = set()
@@ -177,7 +172,7 @@ def read_brat_format_ee(ann_filename, txt_filename):
                 z += 1
                 w = 0
 
-            #if the current sentence is empty place the START token
+            # if the current sentence is empty place the START token
             if len(sentences[z]) == 0:
                 sentences[z] = ['[CLS]']
                 tags[z] = ['CLS']
@@ -207,10 +202,10 @@ def read_brat_format_ee(ann_filename, txt_filename):
         sentences[z].append('[SEP]')
         tags[z].append('SEP')
         ee_sentences, ee_labels = create_re_examples(tag2wid, ids2arg,
-                                                                      sentences,
-                                                                      trigger_set, entity_set,
-                                                                      previous_tagid, w, z,
-                                                                      ee_sentences, ee_labels)
+                                                     sentences,
+                                                     trigger_set, entity_set,
+                                                     previous_tagid, w, z,
+                                                     ee_sentences, ee_labels)
 
     return sentences, tags, ee_sentences, ee_labels
 
@@ -227,7 +222,7 @@ def read_folder_ee(path):
             s_id = re.findall(r'\d+', s_file)
             e_id = re.findall(r'\d+', e_file)
             if s_id[0] == e_id[0]:
-                sents, tags, ee_sents, ee_labels = read_brat_format_ee(path+s_file, path+e_file)
+                sents, tags, ee_sents, ee_labels = read_brat_format_ee(path + s_file, path + e_file)
                 sents_all.extend(sents)
                 tags_all.extend(tags)
                 sents_ee_all.extend(ee_sents)
@@ -260,7 +255,6 @@ class PatentDataset(Dataset):
 
 
 def transformer_collate_fn(batch, tokenizer, label2id, use_wordpiece=False):
-
     # pdb.set_trace()
     bert_vocab = tokenizer.get_vocab()
     bert_pad_token = bert_vocab['[PAD]']
@@ -292,7 +286,7 @@ def transformer_collate_fn(batch, tokenizer, label2id, use_wordpiece=False):
         sentences.append(torch.tensor(tokenized_sent))
         labels.append(torch.tensor(tokenized_label))
         trig_mask.append((tokenized_sent.index(trig_start_token),
-                         tokenized_sent.index(trig_end_token)))
+                          tokenized_sent.index(trig_end_token)))
         ent_mask.append((tokenized_sent.index(ent_start_token),
                          tokenized_sent.index(ent_end_token)))
 
@@ -309,6 +303,44 @@ def transformer_collate_fn(batch, tokenizer, label2id, use_wordpiece=False):
 #
 #     return tokenizer, model
 
+def colab_load_data(model_name, data, data_size=1):
+    ee_sentences_train, ee_labels_train = data[0]
+    ee_sentences_val, ee_labels_val = data[1]
+
+    train_ind = int(data_size * len(ee_labels_train))
+    val_ind = int(data_size * len(ee_labels_val))
+
+    train_dataset_re = PatentDataset(ee_sentences_train[:train_ind], ee_labels_train[:train_ind])
+    val_dataset_re = PatentDataset(ee_sentences_val[:val_ind], ee_labels_val[:val_ind])
+
+    biobert_tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # add relation tokens
+    biobert_tokenizer.add_special_tokens({'additional_special_tokens': ['[$]', '[/$]', '[#]', '[/#]']})
+
+    label2i = dict()
+    label2i['O'] = 0
+    label2i['ARGM'] = 1
+    label2i['ARG1'] = 2
+    # i2label = {i:t for t, i in label2i.items()}
+
+    train_dataloader = DataLoader(train_dataset_re, batch_size=32,
+                                  collate_fn=partial(transformer_collate_fn,
+                                                     tokenizer=biobert_tokenizer,
+                                                     label2id=label2i,
+                                                     use_wordpiece=False),
+                                  shuffle=True)
+
+    val_dataloader = DataLoader(val_dataset_re, batch_size=32,
+                                collate_fn=partial(transformer_collate_fn,
+                                                   tokenizer=biobert_tokenizer,
+                                                   label2id=label2i,
+                                                   use_wordpiece=False),
+                                shuffle=True)
+
+    # return sentences_train, tags_train, ee_sentences_train, ee_labels_train
+    return train_dataloader, val_dataloader, biobert_tokenizer
+
+
 def load_data_ee(model_name):
     sentences_train, tags_train, ee_sentences_train, ee_labels_train = read_folder_ee('data/ee_train/')
     sentences_val, tags_val, ee_sentences_val, ee_labels_val = read_folder_ee('data/ee_train/')
@@ -324,7 +356,7 @@ def load_data_ee(model_name):
     label2i['O'] = 0
     label2i['ARGM'] = 1
     label2i['ARG1'] = 2
-    #i2label = {i:t for t, i in label2i.items()}
+    # i2label = {i:t for t, i in label2i.items()}
 
     train_dataloader = DataLoader(train_dataset_re, batch_size=32,
                                   collate_fn=partial(transformer_collate_fn,
@@ -334,13 +366,11 @@ def load_data_ee(model_name):
                                   shuffle=True)
 
     val_dataloader = DataLoader(val_dataset_re, batch_size=32,
-                                  collate_fn=partial(transformer_collate_fn,
-                                                     tokenizer=biobert_tokenizer,
-                                                     label2id=label2i,
-                                                     use_wordpiece=False),
-                                  shuffle=True)
-
-
+                                collate_fn=partial(transformer_collate_fn,
+                                                   tokenizer=biobert_tokenizer,
+                                                   label2id=label2i,
+                                                   use_wordpiece=False),
+                                shuffle=True)
 
     # return sentences_train, tags_train, ee_sentences_train, ee_labels_train
     return train_dataloader, val_dataloader, biobert_tokenizer

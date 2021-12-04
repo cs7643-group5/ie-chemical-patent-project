@@ -24,6 +24,53 @@ def count_parameters(model: nn.Module):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+# Universal function to compare predicted tags and actual tags
+def measure_f1(model, dataloader, device, i2label):
+
+    model.eval()
+
+    results_dict = {v: {'tp': 0, 'fp': 0, 'fn': 0} for v in i2label.values()}
+
+    with torch.no_grad():
+        for i, batch in enumerate(dataloader):
+            sentences, masks, labels, trig_mask, ent_mask = batch[0], batch[1], batch[2], batch[3], batch[4]
+            output = model(sentences.to(device), masks.to(device), trig_mask, ent_mask)
+            output = F.softmax(output, dim=1)
+            output_class = torch.argmax(output, dim=1)
+
+            for pred, actual in zip(output_class, labels):
+
+                pred = i2label[pred.item()]
+                actual = i2label[actual.item()]
+
+                if pred == actual and pred != 'O':
+                    results_dict[actual]['tp'] += 1
+                elif not (pred == 'O' and actual == 'O'):
+                    if pred == 'O':
+                        results_dict[actual]['fn'] += 1
+                    elif actual == 'O':
+                        results_dict[pred]['fp'] += 1
+                    else:
+                        results_dict[actual]['fn'] += 1
+                        results_dict[pred]['fp'] += 1
+                else:
+                    pass
+
+    f1_scores = []
+
+    for label in i2label.values():
+        if label != 'O':
+            precision = round(results_dict[label]['tp'] / (results_dict[label]['tp'] + results_dict[label]['fp'] + 1e-6), 4)
+            recall = round(results_dict[label]['tp'] / (results_dict[label]['tp'] + results_dict[label]['fn'] + 1e-6), 4)
+            f1 = round((2 * precision * recall) / (precision + recall + 1e-6), 4)
+            f1_scores.append(f1)
+            print("Entity Label: ", label, ", Precision: ", precision, ", Recall: ", recall, ", F1: ", f1)
+
+    f1_average = sum(f1_scores) / len(f1_scores)
+    print('Average F1 Score: ', round(f1_average, 4))
+    return f1_average
+
+
 # calculate the loss from the model on the provided dataloader
 def evaluate(model,
              dataloader,
@@ -150,6 +197,7 @@ if __name__ == '__main__':
         train_dataloader, val_dataloader, biobert_tokenizer = ee_preprocessor.load_data_ee(model_name)
     data_end = time.time()
     print(f'completed data loading in {(data_end - data_start) / 60:.2f} minutes')
+    _, i2label = ee_preprocessor.map2ind()
     bert_model.resize_token_embeddings(len(biobert_tokenizer))  # adds 4 to account for relation tokens
 
     # define hyperparameters
@@ -182,15 +230,15 @@ if __name__ == '__main__':
     print('running initial performance metrics')
     start_time = time.time()
     train_loss = evaluate(model, train_dataloader, device)
-    train_acc = evaluate_acc(model, train_dataloader, device)
+    train_f1 = measure_f1(model, train_dataloader, device, i2label)
 
     valid_loss = evaluate(model, val_dataloader, device)
-    valid_acc = evaluate_acc(model, val_dataloader, device)
+    valid_f1 = measure_f1(model, val_dataloader, device, i2label)
 
     print(f'Initial Train Loss: {train_loss:.3f}')
-    print(f'Initial Train Acc: {train_acc:.3f}')
+    print(f'Initial Train F1: {train_f1:.3f}')
     print(f'Initial Valid Loss: {valid_loss:.3f}')
-    print(f'Initial Valid Acc: {valid_acc:.3f}')
+    print(f'Initial Valid F1: {valid_f1:.3f}')
     end_time = time.time()
     print(f'completed initial performance metrics in {(end_time - start_time) / 60:.2f} minutes')
 
@@ -200,16 +248,16 @@ if __name__ == '__main__':
         start_time = time.time()
         train_loss = train(model, train_dataloader, optimizer, device, CLIP, scheduler)
         end_time = time.time()
-        train_acc = evaluate_acc(model, train_dataloader, device)
+        train_f1 = measure_f1(model, train_dataloader, device, i2label)
         valid_loss = evaluate(model, val_dataloader, device)
-        valid_acc = evaluate_acc(model, val_dataloader, device)
+        valid_f1 = measure_f1(model, val_dataloader, device, i2label)
         epoch_mins, epoch_secs = epoch_time(start_time, end_time)
 
         print(f'Epoch: {epoch + 1:02} | Time: {epoch_mins}m {epoch_secs}s')
         print(f'\tTrain Loss: {train_loss:.3f}')
-        print(f'\tTrain Acc: {train_acc:.3f}')
+        print(f'\tTrain F1: {train_f1:.3f}')
         print(f'\tValid Loss: {valid_loss:.3f}')
-        print(f'\tValid Acc: {valid_acc:.3f}')
+        print(f'\tValid F1: {valid_f1:.3f}')
 
     train_end_time = time.time()
     print(f'completed training in {(train_end_time - train_start_time) / 60:.2f} minutes')

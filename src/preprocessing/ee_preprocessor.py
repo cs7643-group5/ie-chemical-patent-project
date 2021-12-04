@@ -303,6 +303,16 @@ def transformer_collate_fn(batch, tokenizer, label2id, use_wordpiece=False):
 #
 #     return tokenizer, model
 
+def map2ind():
+    label2i = dict()
+    label2i['O'] = 0
+    label2i['ARGM'] = 1
+    label2i['ARG1'] = 2
+    i2label = {i: t for t, i in label2i.items()}
+    return label2i, i2label
+
+
+
 def colab_load_data(model_name, data, data_size=1):
     ee_sentences_train, ee_labels_train = data[0]
     ee_sentences_val, ee_labels_val = data[1]
@@ -317,10 +327,7 @@ def colab_load_data(model_name, data, data_size=1):
     # add relation tokens
     biobert_tokenizer.add_special_tokens({'additional_special_tokens': ['[$]', '[/$]', '[#]', '[/#]']})
 
-    label2i = dict()
-    label2i['O'] = 0
-    label2i['ARGM'] = 1
-    label2i['ARG1'] = 2
+    label2i, _ = map2ind()
     # i2label = {i:t for t, i in label2i.items()}
 
     train_dataloader = DataLoader(train_dataset_re, batch_size=32,
@@ -352,10 +359,7 @@ def load_data_ee(model_name):
     # add relation tokens
     biobert_tokenizer.add_special_tokens({'additional_special_tokens': ['[$]', '[/$]', '[#]', '[/#]']})
 
-    label2i = dict()
-    label2i['O'] = 0
-    label2i['ARGM'] = 1
-    label2i['ARG1'] = 2
+    label2i, _ = map2ind()
     # i2label = {i:t for t, i in label2i.items()}
 
     train_dataloader = DataLoader(train_dataset_re, batch_size=32,

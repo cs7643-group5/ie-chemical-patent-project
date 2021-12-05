@@ -6,6 +6,7 @@
 # Import libraries
 import preprocessor
 from transformers import AdamW, AutoTokenizer, AutoModelForMaskedLM, BertForSequenceClassification, AutoModelForTokenClassification, AutoModel
+from transformers import AutoModelForTokenClassification, AutoModel, get_linear_schedule_with_warmup
 from seqeval.metrics import classification_report
 import torch, itertools
 from conlleval import evaluate
@@ -21,37 +22,41 @@ if torch.cuda.is_available():
     torch.cuda.empty_cache()
     device1 = cuda.get_current_device()
     device1.reset()
-
 else:
     device = torch.device('cpu')
 
-device = torch.device('cpu')
+# device = torch.device('cpu')
 print("Device: ", device)
 
 
 # Load Data Arguments
-model_name = "dmis-lab/biobert-base-cased-v1.2"
-# model_name = "dslim/bert-base-NER"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-epochs = 10
+MODEL_NAME = "dmis-lab/biobert-base-cased-v1.2" # "dslim/bert-base-NER"
+TOKENIZER = AutoTokenizer.from_pretrained(MODEL_NAME)
 
-baseline_lr = 5e-5
-baseline_batch_size = 32
+BASELINE_BATCH_SIZE = 32
+BASELINE_LR = 5e-5
+BASELINE_EPOCHS = 50
 
-batch_size = 64
-lr = baseline_lr * np.sqrt(batch_size / baseline_batch_size)
+BATCH_SIZE = 4
+LR = BASELINE_LR * np.sqrt(BATCH_SIZE / BASELINE_BATCH_SIZE)
+EPOCHS = int(round(BASELINE_EPOCHS / (np.sqrt(BATCH_SIZE / BASELINE_BATCH_SIZE))))
 
-tag2i_train, i2tag_train, tag2i_val, i2tag_val, train_dataloader, val_dataloader = preprocessor.load_data(batch_size, model_name)
+print("Batch Size: ", BATCH_SIZE)
+print("Learning Rate: ", LR)
+print("Epochs: ", EPOCHS)
+print()
 
-num_tags = max(list(i2tag_train.keys())) + 1
-dropout = 0.1
+tag2i_train, i2tag_train, tag2i_val, i2tag_val, train_dataloader, val_dataloader = preprocessor.load_data(BATCH_SIZE, MODEL_NAME)
 
+NUM_TAGS = max(list(i2tag_train.keys())) + 1
+DROPOUT = 0.1
+scheduler = None
 
 
 # Universal function to compare predicted tags and actual tags
 def measure_results(results, label_tags):
-    true_tags = [item for sublist1 in results for sublist0 in sublist1 for item in sublist0]
-    pred_tags = [item for sublist1 in label_tags for sublist0 in sublist1 for item in sublist0]
+    pred_tags = [item for sublist1 in results for sublist0 in sublist1 for item in sublist0]
+    true_tags = [item for sublist1 in label_tags for sublist0 in sublist1 for item in sublist0]
 
     # classification_report([[item for item in sublist0] for sublist1 in results for sublist0 in sublist1], [[item for item in sublist0] for sublist1 in results for sublist0 in sublist1])
     f1_scores = []
@@ -64,7 +69,7 @@ def measure_results(results, label_tags):
         
         tp, fp, fn = 0, 0, 0
 
-        for result, label in zip(true_tags, pred_tags):
+        for result, label in zip(pred_tags, true_tags):
             if result == tag and label == tag:
                 tp += 1
             if result == tag and label != tag:
@@ -89,13 +94,13 @@ def measure_results(results, label_tags):
 # Vanilla
 #####################################################################
 
-model = AutoModelForMaskedLM.from_pretrained(model_name).to(device)
+model = AutoModelForMaskedLM.from_pretrained(MODEL_NAME).to(device)
 # model = BertForSequenceClassification.from_pretrained(model_name, num_labels=num_tags).to(device)
 # model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_tags).to(device)
 # print(model)
 
-optim = AdamW(model.parameters(), lr = lr)
-scheduler = torch.optim.lr_scheduler.OneCycleLR(optim, max_lr= lr * 5, steps_per_epoch=len(train_dataloader), epochs=epochs)
+optim = AdamW(model.parameters(), lr = LR)
+scheduler = get_linear_schedule_with_warmup(optim, len(train_dataloader), len(train_dataloader)*EPOCHS, last_epoch = -1 )
 
 def validate():
     model.eval()
@@ -108,11 +113,15 @@ def validate():
         outputs = outputs.logits.argmax(dim = -1)
         a, b = outputs.shape
         
-        results = [[i2tag_val[outputs[i, j].item()] for j in range(b)] for i in range(a)]
-        label_tags = [[i2tag_val[labels[i, j].item()] for j in range(b)] for i in range(a)] 
+        try:
+          results = [[i2tag_val[outputs[i, j].item()] for j in range(b)] for i in range(a)]
+          label_tags = [[i2tag_val[labels[i, j].item()] for j in range(b)] for i in range(a)] 
+          
+          results_full.append(results)
+          labels_full.append(label_tags)
         
-        results_full.append(results)
-        labels_full.append(label_tags)
+        except:
+          pass
 
     return results_full, labels_full
 
@@ -121,8 +130,10 @@ best_model = None
 best_f1 = 0
 
 # BASELINE TRAINING SCRIPT
-for epoch in range(epochs):
+for epoch in range(EPOCHS):
+    print()
     print("Epoch: ", epoch)
+    print('LR: ', optim.param_groups[0]["lr"])
 
     model.train()
     for input_ids, mask, labels in train_dataloader:
@@ -131,15 +142,15 @@ for epoch in range(epochs):
         loss = outputs.loss
         loss.backward()
         optim.step()
-        scheduler.step()
+        if scheduler != None:
+          scheduler.step()
     
     print(f"loss on epoch {epoch} = {loss}")
     results, label_tags = validate()
     f1 = measure_results(results, label_tags)
-    
+
     if f1 > best_f1:
-        best_f1 = f1
-        model.save_pretrained("model")
+      best_f1 = f1
 
 print('Best F1 Score: ', best_f1)
 
@@ -173,10 +184,10 @@ print('Best F1 Score: ', best_f1)
 # class CustomBERTModel(nn.Module):
 #     def __init__(self, num_tags = 15):
 #         super(CustomBERTModel, self).__init__()
-#         # self.bert = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_tags).to(device)
-#         self.bert = AutoModelForMaskedLM.from_pretrained("model")
+#         self.bert = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_tags).to(device)
+          # self.bert = AutoModelForMaskedLM.from_pretrained("model")
 #         # self.bert = AutoModelForMaskedLM.from_pretrained(model_name)
-#         self.linear1 = nn.Linear(28996, num_tags)
+#         # self.linear1 = nn.Linear(28996, num_tags)
 #         self.crf = CRF(num_tags)#batch_first = True
 
 #     def return_emissions(self, input_ids, attention_mask, labels, inference = True):

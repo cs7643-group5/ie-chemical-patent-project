@@ -22,7 +22,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
 
-def read_brat_format(ann_filename, txt_filename):
+def read_brat_format(ann_filename, txt_filename, ner_task=1):
 
     # read in raw text from patent snippet
     snippet = ""
@@ -37,10 +37,14 @@ def read_brat_format(ann_filename, txt_filename):
         # this will repeat the tag multiple times which is inefficient but it's a good way to get the data in the right form
         for line in open(ann_filename, encoding="utf8").readlines():
             line_seg = line.split()
-            tag = line_seg[1]
-            start_i = int(line_seg[2])
-            end_i = int(line_seg[3])
-            char_tags[start_i:end_i] = [tag]*(end_i-start_i)
+            tag_id = line_seg[0]
+            if tag_id[0] == 'T':
+                tag = line_seg[1]
+                if ner_task == 2 and tag != 'WORKUP' and tag != 'REACTION_STEP':
+                    tag = 'O'
+                start_i = int(line_seg[2])
+                end_i = int(line_seg[3])
+                char_tags[start_i:end_i] = [tag]*(end_i-start_i)
 
         z = 0  # place holder to determine what sentence index on currently
         sent_spans = list(PunktSentenceTokenizer().span_tokenize(snippet))  # get spans for sentences
@@ -108,7 +112,7 @@ def read_brat_format(ann_filename, txt_filename):
     return sentences, tags
 
 
-def read_folder(path, labels=True):
+def read_folder(path, labels=True, ner_task=1):
 
     files = sorted(os.listdir(path))
     sents_all = []
@@ -120,7 +124,7 @@ def read_folder(path, labels=True):
                 s_id = re.findall(r'\d+', s_file)
                 e_id = re.findall(r'\d+', e_file)
                 if s_id[0] == e_id[0]:
-                    sents, tags = read_brat_format(path+s_file, path+e_file)
+                    sents, tags = read_brat_format(path+s_file, path+e_file, ner_task)
                     sents_all.extend(sents)
                     tags_all.extend(tags)
     else:
@@ -203,10 +207,14 @@ def load_biobert(name):
     return tokenizer, model
 
 
-def load_data():
+def load_data(ner_task=1):
+    if ner_task == 1:
+        train_sents, train_tags = read_folder('data/train/')
+        val_sents, val_tags = read_folder('data/dev/')
+    elif ner_task == 2:
+        train_sents, train_tags = read_folder('data/ee_train/', labels=True, ner_task=2)
+        val_sents, val_tags = read_folder('data/ee_dev/', labels=True, ner_task=2)
 
-    train_sents, train_tags = read_folder('data/train/')
-    val_sents, val_tags = read_folder('data/dev/')
     # test_sents, _ = read_folder('data/chemu.ner.test/', labels=False)
 
     model_name = "dmis-lab/biobert-base-cased-v1.2"

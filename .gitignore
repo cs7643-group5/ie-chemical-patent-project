@@ -3,6 +3,8 @@ data/dev/
 data/train/
 data/ee_dev/
 data/ee_train/
+data/ee_data.pickle
+data/ee_eval_data.pickle
 .DS_Store
 .idea/
 src/preprocessing/__pycache__/

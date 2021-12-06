@@ -1,5 +1,10 @@
 from preprocessing import ee_preprocessor
+from preprocessing import ee_evalutation
 import pickle
+import torch
+import torch.nn as nn
+from torch import optim
+import torch.nn.functional as F
 
 
 def store_data():
@@ -15,7 +20,7 @@ def store_data():
 
     return None
 
-
-store_data()
+#store_data()
+ee_evalutation.store_data()
 
 

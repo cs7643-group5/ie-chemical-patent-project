@@ -765,7 +765,9 @@ def measure_ee_f1(model_ner, model_re, dataloader, device, i2arg, i2trigger, i2t
                               'ARGM|WORKUP|TIME',
                               'ARGM|WORKUP|YIELD_OTHER',
                               'ARGM|WORKUP|YIELD_PERCENT']
-
+    tp_total = 0
+    fn_total = 0
+    fp_total = 0
     for label in results_dict.keys():
         if label in gold_label_result_keys:
         # if sum([e == 'O' for e in label.split('|')]) == 0:
@@ -776,11 +778,19 @@ def measure_ee_f1(model_ner, model_re, dataloader, device, i2arg, i2trigger, i2t
                 results_dict[label]['tp'] / (results_dict[label]['tp'] + results_dict[label]['fn'] + 1e-6),
                 4)
             f1 = round((2 * precision * recall) / (precision + recall + 1e-6), 4)
-            f1_scores.append(f1)
+            tp_total += results_dict[label]['tp']
+            fn_total += results_dict[label]['fn']
+            fp_total += results_dict[label]['fp']
+            if f1 > 0.0000:
+                f1_scores.append(f1)
             print("Event Label: ", label, ", Precision: ", precision, ", Recall: ", recall, ", F1: ", f1)
 
+    precision_overall = round(tp_total / (tp_total + fp_total + 1e-6), 4)
+    recall_overall = round(tp_total / (tp_total + fn_total + 1e-6), 4)
+    f1_overall = round((2 * precision_overall * recall_overall) / (precision_overall + recall_overall + 1e-6), 4)
     f1_average = sum(f1_scores) / len(f1_scores)
-    print('Average F1 Score: ', round(f1_average, 4))
+    print('Average non-zero F1 Score: ', round(f1_average, 4))
+    print("Overall Performance, Precision: ", precision_overall, ", Recall: ", recall_overall, ", F1: ", f1_overall)
     end_time = time.time()
     print(f'evaluation took:{(end_time - start_time)/60 :.2f} minutes')
     return f1_average

@@ -3,12 +3,18 @@
 from nltk.tokenize import WhitespaceTokenizer
 from nltk.tokenize.punkt import PunktSentenceTokenizer
 
+from tqdm import tqdm
+
+import time
+
 import pdb
 
 from functools import partial
 from transformers import AutoTokenizer, AutoModel
 
 import torch
+
+from preprocessing import preprocessor
 
 import numpy as np
 
@@ -33,7 +39,11 @@ def create_re_examples(tag2wid_fixed, ids2arg,
                        trigger_set, entity_set,
                        previous_tagid, w, z,
                        ee_sentences_fixed, ee_labels_fixed,
+                       ids2arg_sent_fixed,
                        replace_entities=True):
+
+    ids2arg_sent = ids2arg_sent_fixed.copy()
+    # ids2arg_per_sent = ids2arg_per_sent_fixed.copy()
     tag2wid = tag2wid_fixed.copy()
     ee_sentences = ee_sentences_fixed.copy()
     ee_labels = ee_labels_fixed.copy()
@@ -88,8 +98,21 @@ def create_re_examples(tag2wid_fixed, ids2arg,
 
             ee_sentences.append(adjust_sent)
             ee_labels.append(ids2arg[(trigger_id, entity_id)])
+            # pdb.set_trace()
+            if len(ids2arg_sent[z]) == 0:
+                ids2arg_sent[z] = ({(trigger_id, entity_id): ids2arg[(trigger_id, entity_id)]}, {(trigger_id, entity_id): (trigger, entity)})
+            else:
+                ids2arg_sent[z][0][(trigger_id, entity_id)] = ids2arg[(trigger_id, entity_id)]
+                ids2arg_sent[z][1][(trigger_id, entity_id)] = (trigger, entity)
 
-    return ee_sentences, ee_labels
+    if len(ids2arg_sent[z]) == 0:
+        ids2arg_sent[z] = ({}, {})
+
+    if ids2arg_sent[z][0].keys() != ids2arg_sent[z][1].keys():
+        pdb.set_trace()
+        raise Exception('ids2arg tuple do not contain the same keys')
+
+    return ee_sentences, ee_labels, tag2wid, ids2arg_sent
 
 
 def read_brat_format_ee(ann_filename, txt_filename):
@@ -143,6 +166,9 @@ def read_brat_format_ee(ann_filename, txt_filename):
         ee_ent_tag_ids = [[]] * len(sent_spans)
         ent_sets = [[]] * len(sent_spans)
         tag2wids = [[]] * len(sent_spans)
+        # ids2arg_per_sent = [{}] * len(sentences)
+        # ids2arg_name_per_sent = [{}] * len(sentences)
+        ids2arg_sent = [[]] * len(sentences)
 
         trigger_set = set()
         entity_set = set()
@@ -164,13 +190,20 @@ def read_brat_format_ee(ann_filename, txt_filename):
                 sentences[z].append('[SEP]')
                 tags[z].append('SEP')
                 ee_ent_tag_ids[z].append(('O', 'O'))
+                if len(ee_ent_tag_ids[z]) != len(sentences[z]):
+                    raise Exception('nope')
                 ent_sets[z] = entity_set
-                tag2wids[z] = tag2wid
-                ee_sentences, ee_labels = create_re_examples(tag2wid, ids2arg,
+                ee_sentences, ee_labels, tag2wid, ids2arg_sent = create_re_examples(tag2wid, ids2arg,
                                                              sentences,
                                                              trigger_set, entity_set,
                                                              previous_tagid, w, z,
-                                                             ee_sentences, ee_labels)
+                                                             ee_sentences, ee_labels,
+                                                            ids2arg_sent)
+                tag2wids[z] = tag2wid
+
+                if len(ids2arg_sent[z]) != 2:
+                    pdb.set_trace()
+                    raise Exception('tuple size for ids and args are not equal to 2')
 
                 # reset variables for next sentence
                 trigger_set = set()
@@ -183,9 +216,12 @@ def read_brat_format_ee(ann_filename, txt_filename):
 
             # if the current sentence is empty place the START token
             if len(sentences[z]) == 0:
+                #pdb.set_trace()
                 sentences[z] = ['[CLS]']
                 tags[z] = ['CLS']
-                ee_ent_tag_ids[z].append(('O', 'O'))
+                ee_ent_tag_ids[z] = [('O', 'O')]
+                if len(ee_ent_tag_ids[z]) != len(sentences[z]):
+                    raise Exception('nope')
                 w += 1
 
             # need to identify if carry over from previous word
@@ -205,24 +241,43 @@ def read_brat_format_ee(ann_filename, txt_filename):
 
             sentences[z].append(word)
             tags[z].append(tag)
+            # pdb.set_trace()
             ee_ent_tag_ids[z].append((tag, tag_id))
+            if len(ee_ent_tag_ids[z]) != len(sentences[z]):
+                raise Exception('nope')
 
             w += 1
 
         # last iterations ending tokens will be missing so have to add in here
         sentences[z].append('[SEP]')
         tags[z].append('SEP')
+        #pdb.set_trace()
         ee_ent_tag_ids[z].append((tag, tag_id))
+        if len(tags[z]) != len(ee_ent_tag_ids[z]):
+            # pdb.set_trace()
+            raise Exception('nope')
+
         ent_sets[z] = entity_set
-        tag2wids[z] = tag2wid
-        ee_sentences, ee_labels = create_re_examples(tag2wid, ids2arg,
+        ee_sentences, ee_labels, tag2wid,  ids2arg_sent = create_re_examples(tag2wid, ids2arg,
                                                      sentences,
                                                      trigger_set, entity_set,
                                                      previous_tagid, w, z,
-                                                     ee_sentences, ee_labels)
-        ee_ids2arg = [ids2arg] * len(sentences)
+                                                     ee_sentences, ee_labels,
+                                                     ids2arg_sent)
+        if len(ids2arg_sent[z]) != 2:
+            pdb.set_trace()
+            raise Exception('tuple size for ids and args are not equal to 2')
 
-    return sentences, tags, ee_sentences, ee_labels, ee_ids2arg, ee_ent_tag_ids, ent_sets, tag2wids
+        tag2wids[z] = tag2wid
+        #ee_ids2arg = [ids2arg] * len(sentences)
+
+
+        # if len(sentences) != len(ee_ent_tag_ids):
+        #     pdb.set_trace()
+        #     raise Exception('Entity tag tuples do not match sentence length')
+
+
+    return sentences, tags, ee_sentences, ee_labels,  ids2arg_sent , ee_ent_tag_ids, ent_sets, tag2wids
 
 
 def read_folder_ee(path):
@@ -250,7 +305,18 @@ def read_folder_ee(path):
                 ee_ent_tag_ids_all.extend(ee_ent_tag_ids)
                 ent_sets_all.extend(ent_sets)
                 tag2wids_all.extend(tag2wids)
+                if len(sents) != len(ee_ent_tag_ids):
+                    pdb.set_trace()
+                    raise Exception('Entity tag tuples do not match sentence length')
 
+    # if len(sents_all) != len(ee_ent_tag_ids_all):
+    #     pdb.set_trace()
+    #     raise Exception('Entity tag tuples do not match sentence length')
+
+    for i, (s, e_t_id) in enumerate(zip(sents_all, ee_ent_tag_ids_all)):
+        if len(s) != len(e_t_id):
+            pdb.set_trace()
+            raise Exception(f'size mismatch at {i}')
 
     return sents_all, tags_all, sents_ee_all, labels_ee_all, ee_ids2arg_all, ee_ent_tag_ids_all, ent_sets_all, tag2wids_all
 
@@ -346,49 +412,68 @@ def transformer_collate_fn(batch, tokenizer, use_wordpiece=False):
         ent_sets_all.append(ent_sets)
         tag2wids_all.append(tag2wid)
 
+        if len(torch.tensor(tokenized_sent)) != len(ent_tag_ids):
+            pdb.set_trace()
+            raise Exception('Entity tag tuples do not match sentence length')
+
     sentences = pad_sequence(sentences, batch_first=True, padding_value=bert_pad_token)
     mask = pad_sequence(mask, batch_first=True, padding_value=bert_pad_token)
 
     return sentences, mask, ids2args_all, ent_tag_ids_all, ent_sets_all, tag2wids_all
 
 
-def map2ind():
-    label2i = dict()
-    label2i['O'] = 0
-    label2i['ARGM'] = 1
-    label2i['ARG1'] = 2
-    i2label = {i: t for t, i in label2i.items()}
-    return label2i, i2label
+# def map2ind():
+#     label2i = dict()
+#     label2i['O'] = 0
+#     label2i['ARGM'] = 1
+#     label2i['ARG1'] = 2
+#     i2label = {i: t for t, i in label2i.items()}
+#     return label2i, i2label
 
 
 def store_data():
-    sentences_train, _, _, _, ee_ids2arg_train, ee_ent_tag_ids_train, ent_sets_all_train, tag2wids_all_train = read_folder_ee(
+    sentences_train, tags_train, ee_sentences_train, ee_labels_train, ee_ids2arg_train, ee_ent_tag_ids_train, ent_sets_all_train, tag2wids_all_train = read_folder_ee(
         'data/ee_train/')
-    sentences_val, _, _, _, ee_ids2arg_val, ee_ent_tag_ids_val, ent_sets_all_val, tag2wids_all_val = read_folder_ee(
+    sentences_val, tags_val, ee_sentences_val, ee_labels_val, ee_ids2arg_val, ee_ent_tag_ids_val, ent_sets_all_val, tag2wids_all_val = read_folder_ee(
         'data/ee_dev/')
 
-    data_train = (sentences_train, ee_ids2arg_train, ee_ent_tag_ids_train, ent_sets_all_train, tag2wids_all_train)
-    data_val = (sentences_val, ee_ids2arg_val, ee_ent_tag_ids_val, ent_sets_all_val, tag2wids_all_val)
+    for s, e_t_id in zip(sentences_val, ee_ent_tag_ids_val):
+        if len(s) != len(e_t_id):
+            raise Exception('size mismatch')
+
+        # train_sents_1, train_tags_1 = read_folder('data/train/')
+    val_sents_1, val_tags_1 = preprocessor.read_folder('data/dev/')
+    val_sents_2, val_tags_2 = preprocessor.read_folder('data/ee_dev/', labels=True, ner_task=2)
+
+    tag2i, i2tag = preprocessor.map2ind(val_tags_1)
+    trigger2i, i2trigger = preprocessor.map2ind(val_tags_2)
+
+    #data_train = (sentences_train, ee_ids2arg_train, ee_ent_tag_ids_train, ent_sets_all_train, tag2wids_all_train)
+    data_val = (i2tag, i2trigger, sentences_val, ee_ids2arg_val, ee_ent_tag_ids_val, ent_sets_all_val, tag2wids_all_val)
 
     with open("data/ee_eval_data.pickle", "wb") as f:
-        pickle.dump((data_train, data_val), f)
+        pickle.dump(data_val, f)
 
     return None
 
 
 def colab_load_data(model_name, data, data_size=1):
 
-    sentences_train, ee_ids2arg_train, ee_ent_tag_ids_train, ent_sets_train, tag2wids_train = data[0]
-    sentences_val, ee_ids2arg_val, ee_ent_tag_ids_val, ent_sets_val, tag2wids_val = data[1]
+    #sentences_train, ee_ids2arg_train, ee_ent_tag_ids_train, ent_sets_train, tag2wids_train = data[0]
+    i2tag, i2trigger, sentences_val, ee_ids2arg_val, ee_ent_tag_ids_val, ent_sets_val, tag2wids_val = data[0], data[1], data[2], data[3], data[4], data[5], data[6]
 
-    train_ind = int(data_size * len(sentences_train))
+    #train_ind = int(data_size * len(sentences_train))
     val_ind = int(data_size * len(sentences_val))
 
-    train_dataset_re = EvalDataset(sentences_train[:train_ind],
-                                   ee_ids2arg_train[:train_ind],
-                                   ee_ent_tag_ids_train[:train_ind],
-                                   ent_sets_train[:train_ind],
-                                   tag2wids_train[:train_ind])
+    for s, e_t_id in zip(sentences_val, ee_ent_tag_ids_val):
+        if len(s) != len(e_t_id):
+            raise Exception('size mismatch')
+
+    # train_dataset_re = EvalDataset(sentences_train[:train_ind],
+    #                                ee_ids2arg_train[:train_ind],
+    #                                ee_ent_tag_ids_train[:train_ind],
+    #                                ent_sets_train[:train_ind],
+    #                                tag2wids_train[:train_ind])
 
     val_dataset_re = EvalDataset(sentences_val[:val_ind],
                                  ee_ids2arg_val[:val_ind],
@@ -400,27 +485,29 @@ def colab_load_data(model_name, data, data_size=1):
     # add relation tokens
     biobert_tokenizer.add_special_tokens({'additional_special_tokens': ['[$]', '[/$]', '[#]', '[/#]']})
 
-    label2i, _ = map2ind()
+
     # i2label = {i:t for t, i in label2i.items()}
 
-    train_dataloader = DataLoader(train_dataset_re, batch_size=32,
-                                  collate_fn=partial(transformer_collate_fn,
-                                                     tokenizer=biobert_tokenizer,
-                                                     use_wordpiece=False),
-                                  shuffle=True)
+    # train_dataloader = DataLoader(train_dataset_re, batch_size=32,
+    #                               collate_fn=partial(transformer_collate_fn,
+    #                                                  tokenizer=biobert_tokenizer,
+    #                                                  use_wordpiece=False),
+    #                               shuffle=True)
 
     val_dataloader = DataLoader(val_dataset_re, batch_size=32,
                                 collate_fn=partial(transformer_collate_fn,
                                                    tokenizer=biobert_tokenizer,
                                                    use_wordpiece=False),
-                                shuffle=True)
+                                shuffle=False)
 
     # return sentences_train, tags_train, ee_sentences_train, ee_labels_train
-    return train_dataloader, val_dataloader, biobert_tokenizer
+    #return train_dataloader, val_dataloader, biobert_tokenizer
+    return i2tag, i2trigger, val_dataloader, biobert_tokenizer
 
 
 def measure_ee_f1(model_ner, model_re, dataloader, device, i2arg, i2trigger, i2tag, tokenizer):
 
+    start_time = time.time()
     ''' this will only work with not using wordpiece '''
     bert_vocab = tokenizer.get_vocab()
     bert_pad_token = bert_vocab['[PAD]']
@@ -430,110 +517,258 @@ def measure_ee_f1(model_ner, model_re, dataloader, device, i2arg, i2trigger, i2t
     ent_end_token = bert_vocab['[/#]']
     unk_token = bert_vocab['[UNK]']
 
+    i2trigger = {3: 'CLS', 0: 'WORKUP', 4: 'REACTION_STEP', 1: 'O', 2: 'SEP'}
+    #trigger2i = {t: i for i, t in i2trigger.items() if i != 0 and i != 1}
+    trigger2i = {t: i for i, t in i2trigger.items()}
+    num_tags = len(trigger2i)
+
     model_ner.eval()
     model_re.eval()
-    results_dict = {arg+'|'+trig+'|'+tag for arg in i2arg.values() for trig in i2trigger.values() for tag in i2tag.values()}
-
+    results_dict = {}
+    for arg in i2arg.values():
+        if arg == 'ARG1' or arg == 'ARGM':
+            for trig in i2trigger.values():
+                if trig == 'REACTION_STEP' or trig == 'WORKUP':
+                    for tag in i2tag.values():
+                        if tag != 'M' and tag != 'SPECIAL!' and tag != 'CLS' and tag != 'SEP' and tag != 'O':
+                            results_dict[arg+'|'+trig+'|'+tag] = {'tp': 0, 'fp': 0, 'fn': 0}
+    #results_dict = {arg+'|'+trig+'|'+tag: {'tp': 0, 'fp': 0, 'fn': 0} for arg in i2arg.values() for trig in i2trigger.values() for tag in i2tag.values() if trig != 'M' and trig != 'SPECIAL!' and trig != 'O' and arg != 'O' and tag != 'O'}
+    print('\n beginning model pipeline evaluation...')
     with torch.no_grad():
-        for sentences, mask, ids2args_all, ent_tag_ids_all, ent_sets_all, tag2wids_all in dataloader:
+        for sentences, mask, ids2args_all, ent_tag_ids_all, ent_sets_all, tag2wids_all in tqdm(dataloader):
+            #print('\n beginning batch')
             outputs_ner = model_ner(sentences.to(device), attention_mask=mask.to(device))
+            outputs_ner = outputs_ner.logits[:, :, :num_tags].argmax(dim=-1)
 
             for q, output_ner in enumerate(outputs_ner):
+                #print('\nrunning RE model for one sentence')
                 re_examples = []
                 trig_mask = []
                 ent_mask = []
-                masks = []
+                re_masks = []
                 input_ents_re_ids = []
                 entity_set = ent_sets_all[q]
                 tag2wid = tag2wids_all[q]
-                ids2args = ids2args_all[q]
+                # ids2args = ids2args_all[q]
+                # pdb.set_trace()
+                ids2args, ids2arg_names = ids2args_all[q]
                 ent_tag_ids = ent_tag_ids_all[q]
-                fixed_sent = output_ner.item().tolist()
+                padding_mask = mask[q]
+                fixed_sent_labels = output_ner[padding_mask.bool()].detach().tolist()
+                fixed_sent = sentences[q][padding_mask.bool()].detach().tolist()
 
-                trig_inds = {}
+                # # get rid of the CLS and SEP tokens for now
+                # fixed_sent = fixed_sent[1:-1]
+                # fixed_sent_labels = fixed_sent_labels[1:-1]
+
+
+                trig_inds = []
                 previous_tag = ''
                 trig_id = 0
                 # note this method will fail if two different trigger word tags are right next to each other
-                for i, tag in enumerate(output_ner):
-                    if tag != previous_tag:
-                        if len(trig_inds) != 0 and previous_tag != 'O':
-                            trig_inds[trig_id]['end'] = i
-                            trig_id += 1
-                        if tag != 'O':
-                            trig_inds[trig_id] = {'start': i, 'trigger': tag, 'gold_id':ent_tag_ids[i][0]}
-                        previous_tag = tag
+                ''' well it just so happens that that can happen even though it's not in the dataset back to the drawing board'''
 
-                for t_id in trig_inds.keys():
+                for i, tag in enumerate(fixed_sent_labels):
+                    # assuming trigger entity is only one word
+                    if tag == trigger2i['REACTION_STEP'] or tag == trigger2i['WORKUP']:
+                        trig_inds.append({'start': i,
+                                          'end': i+1,
+                                          'trigger': i2trigger[tag],
+                                          'gold_id': ent_tag_ids[i][1]})
+                    # if tag != previous_tag:
+                    #     if len(trig_inds) != 0 and previous_tag != trigger2i['O'] and previous_tag != trigger2i['M'] and previous_tag != trigger2i['SPECIAL!']:
+                    #         trig_inds[trig_id]['end'] = i
+                    #         trig_id += 1
+                    #     if tag != trigger2i['O'] and tag != trigger2i['M'] and tag != trigger2i['SPECIAL!']:
+                    #         trig_inds[trig_id] = {'start': i,
+                    #                               'trigger': i2trigger[tag],
+                    #                               'gold_id': ent_tag_ids[i][1]}
+                    #     previous_tag = tag
+                #pdb.set_trace()
+                for t_id in range(0, len(trig_inds)):
+                    # if a trigger word is predicted for a SEP or CLS token skip it
+                    if trig_inds[t_id]['end'] == len(fixed_sent_labels) or trig_inds[t_id]['start'] == 0:
+                        continue
+
+                    trigger = trig_inds[t_id]['trigger']
                     for entity, entity_id in entity_set:
-                        adjust_sent = fixed_sent.copy()
-                        input_ents_re_ids[((trigger, trig_inds[t_id]['gold_id']), (entity, entity_id))]
+
                         trig_start = trig_inds[t_id]['start']
                         trig_end = trig_inds[t_id]['end'] + 1 # add one to adjust for first insert of start
-                        trigger = trig_inds[t_id]['tag']
+
+                        ent_start = tag2wid[entity_id + 'start']
+                        # try:
+                        ent_end = tag2wid[entity_id + 'end'] + 1  # add one to adjust for first insert of start
+
+                        # if the entity span is equal to or contained within the tag span skip the example
+                        if (ent_start >= trig_start and ent_end <= trig_end) or (trig_start >= ent_start and trig_end <= ent_end):
+                            continue
+
+                        adjust_sent = fixed_sent.copy()
+                        input_ents_re_ids.append(((trigger, trig_inds[t_id]['gold_id']), (entity, entity_id)))
+                        # trig_start = trig_inds[t_id]['start']
+                        # trig_end = trig_inds[t_id]['end'] + 1 # add one to adjust for first insert of start
 
                         adjust_sent.insert(trig_start, trig_start_token)
                         adjust_sent.insert(trig_end, trig_end_token)
 
                         trig_num_pops = trig_end - trig_start - 1
                         del adjust_sent[trig_start + 1:trig_end]
+
+                        if trig_start_token not in adjust_sent or trig_end_token not in adjust_sent:
+                            raise('missing trigger token')
+
+                        # try:
+                        #     adjust_sent.insert(trig_start + 1, tokenizer.convert_tokens_to_ids(trigger))
+                        # except:
+                        #     pdb.set_trace()
                         adjust_sent.insert(trig_start + 1, tokenizer.convert_tokens_to_ids(trigger))
 
-                        ent_start = tag2wid[entity_id + 'start']
-                        ent_end = tag2wid[entity_id + 'end'] + 1  # add one to adjust for first insert of start
+                        # ent_start = tag2wid[entity_id + 'start']
+                        # #try:
+                        # ent_end = tag2wid[entity_id + 'end'] + 1  # add one to adjust for first insert of start
+                        #except:
+                        #    pdb.set_trace()
 
-                    # account for shift in the indices from the trigger inserts or deletes
-                    if ent_start > trig_start:
-                        ent_start += 2 + 1 - trig_num_pops
-                        ent_end += 2 + 1 - trig_num_pops
+                        # account for shift in the indices from the trigger inserts or deletes
+                        if ent_start > trig_start:
+                            ent_start += 2 + 1 - trig_num_pops
+                            ent_end += 2 + 1 - trig_num_pops
 
-                    adjust_sent.insert(ent_start, ent_start_token)
-                    adjust_sent.insert(ent_end, ent_end_token)
+                        adjust_sent.insert(ent_start, ent_start_token)
+                        adjust_sent.insert(ent_end, ent_end_token)
 
-                    del adjust_sent[ent_start + 1:ent_end]
-                    adjust_sent.insert(ent_start + 1, tokenizer.convert_tokens_to_ids(entity))
-                    re_examples.append(torch.tensor(adjust_sent))
-                    trig_mask.append((adjust_sent.index(trig_start_token),
-                                      adjust_sent.index(trig_end_token)))
-                    ent_mask.append((adjust_sent.index(ent_start_token),
-                                     adjust_sent.index(ent_end_token)))
-                    masks.append(torch.ones(len(adjust_sent)))
+                        del adjust_sent[ent_start + 1:ent_end]
+                        adjust_sent.insert(ent_start + 1, tokenizer.convert_tokens_to_ids(entity))
 
-                # dont know if it is faster to use batches or not
-                sentences = pad_sequence(sentences, batch_first=True, padding_value=bert_pad_token)
-                masks = pad_sequence(masks, batch_first=True, padding_value=bert_pad_token)
-                outputs_re = model_re(torch.stack(re_examples).to(device), masks.to(device), trig_mask, ent_mask)
+                        # if ent_start_token not in adjust_sent or ent_start_token not in adjust_sent:
+                        #     raise Exception('missing trigger token')
+                        #     pdb.set_trace()
+                        #
+                        # if trig_start_token not in adjust_sent or trig_end_token not in adjust_sent:
+                        #     raise Exception('missing trigger token')
+                        #     pdb.set_trace()
 
-                for arg_label, ((trigger, trigger_id), (entity, entity_id)) in zip(outputs_re, input_ents_re_ids):
-                    gold_label = ids2args[(trigger_id, entity_id)]
 
-                    pred = i2arg[arg_label.item()]
-                    actual = gold_label
-                    full_pred_name = pred+'|'+trigger+'|'+entity
-                    full_actual_name = actual+'|'+trigger+'|'+entity
+                        try:
+                            adjust_sent.index(trig_start_token)
+                        except:
+                            pdb.set_trace()
 
-                    pred_arg, pred_trig, pred_ent = full_pred_name.split('|')
-                    actual_arg, actual_trig, actual_ent = full_actual_name.split('|')
+                        try:
+                            adjust_sent.index(trig_end_token)
+                        except:
+                            pdb.set_trace()
 
-                    pred_status = sum([e == 'O' for e in full_pred_name.split('|')])
-                    actual_status = sum([e == 'O' for e in  full_actual_name.split('|')])
+                        try:
+                            adjust_sent.index(ent_start_token)
+                        except:
+                            pdb.set_trace()
+                        try:
+                            adjust_sent.index(ent_end_token)
+                        except:
+                            pdb.set_trace()
 
-                    if pred == actual and pred_status == 0:
-                        results_dict[full_actual_name]['tp'] += 1
-                    elif not (pred_status != 0 and actual_status != 0):
-                        if (pred_arg == 'O' or pred_trig == 'O') and actual_status == 0:
-                            results_dict[full_actual_name]['fn'] += 1
-                        elif (actual_arg == 'O' or actual_trig == 'O') and pred_status == 0:
-                            results_dict[full_pred_name]['fp'] += 1
+
+
+
+                        #try:
+                        # add CLS and SEP tokens back
+                        # adjust_sent.insert(0, '[CLS]')
+                        # adjust_sent.insert(-1, '[SEP]')
+                        re_examples.append(torch.tensor(adjust_sent))
+                        trig_mask.append((adjust_sent.index(trig_start_token),
+                                          adjust_sent.index(trig_end_token)))
+                        ent_mask.append((adjust_sent.index(ent_start_token),
+                                         adjust_sent.index(ent_end_token)))
+                        re_masks.append(torch.ones(len(adjust_sent)))
+                        #except:
+                            #pdb.set_trace()
+                # pdb.set_trace()
+                gold_label_keys_unused = list(ids2arg_names.keys())
+                if len(re_examples) > 0 and len(re_masks) > 0:
+                    # in the future need to catch other cases
+                    # dont know if it is faster to use batches or not
+                    try:
+                        re_sentences = pad_sequence(re_examples, batch_first=True, padding_value=bert_pad_token).to(device)
+                    except:
+                        pdb.set_trace()
+                    re_masks = pad_sequence(re_masks, batch_first=True, padding_value=bert_pad_token).to(device)
+                    outputs_re = model_re(re_sentences, re_masks, trig_mask, ent_mask)
+                    outputs_re = torch.argmax(outputs_re, dim=1)
+
+                    if ids2args.keys() != ids2arg_names.keys():
+                        raise Exception('i2arg tuples are not the same length')
+
+                    for arg_label, ((trigger, trigger_id), (entity, entity_id)) in zip(outputs_re, input_ents_re_ids):
+                        if (trigger_id, entity_id) in ids2args:
+                            gold_label = ids2args[(trigger_id, entity_id)]
+                            if (trigger_id, entity_id) in gold_label_keys_unused:
+                                gold_label_keys_unused.remove((trigger_id, entity_id))
                         else:
-                            results_dict[full_actual_name]['fn'] += 1
-                            results_dict[full_pred_name]['fp'] += 1
-                    else:
-                        pass
+                            gold_label = 'O'
+                        # try:
+                        pred = i2arg[arg_label.item()]
+                        # except:
+                            # pdb.set_trace()
+                        actual = gold_label
+                        full_pred_name = pred+'|'+trigger+'|'+entity
+                        full_actual_name = actual+'|'+trigger+'|'+entity
+
+                        pred_arg, pred_trig, pred_ent = full_pred_name.split('|')
+                        actual_arg, actual_trig, actual_ent = full_actual_name.split('|')
+
+                        pred_status = sum([e == 'O' or e == 'M' or e == 'SEP' or e == 'CLS' or e == 'SPECIAL!' for e in full_pred_name.split('|')])
+                        actual_status = sum([e == 'O' or e == 'M' or e == 'SEP' or e == 'CLS' or e == 'SPECIAL!' for e in full_actual_name.split('|')])
+
+                        if pred == actual and pred_status == 0:
+                            results_dict[full_actual_name]['tp'] += 1
+                        elif pred_status == 0 or actual_status == 0:
+                            if pred_status != 0 and actual_status == 0:
+                                results_dict[full_actual_name]['fn'] += 1
+                            elif actual_status != 0 and pred_status == 0:
+                                results_dict[full_pred_name]['fp'] += 1
+                            else:
+                                results_dict[full_actual_name]['fn'] += 1
+                                results_dict[full_pred_name]['fp'] += 1
+                        else:
+                            pass
+
+                # catch false negatives from labels not developed in inference but in gold sentence
+                if len(gold_label_keys_unused) > 0:
+                    for (trigger_id, entity_id) in gold_label_keys_unused:
+                        label = ids2args[(trigger_id, entity_id)]
+                        if label != 'O':
+                            trigger, entity = ids2arg_names[(trigger_id, entity_id)]
+                            results_dict[label+'|'+trigger+'|'+entity]['fn'] += 1
+                #print('\ncompleted RE model section for one sentence of batch')
+            #print('\nfinished batch')
+
+
 
     f1_scores = []
 
+    gold_label_result_keys = ['ARG1|REACTION_STEP|OTHER_COMPOUND',
+                              'ARG1|REACTION_STEP|REACTION_PRODUCT',
+                              'ARG1|REACTION_STEP|REAGENT_CATALYST',
+                              'ARG1|REACTION_STEP|SOLVENT',
+                              'ARG1|REACTION_STEP|STARTING_MATERIAL',
+                              'ARG1|WORKUP|OTHER_COMPOUND',
+                              'ARG1|WORKUP|REACTION_PRODUCT',
+                              'ARG1|WORKUP|SOLVENT',
+                              'ARG1|WORKUP|STARTING_MATERIAL',
+                              'ARGM|REACTION_STEP|TEMPERATURE',
+                              'ARGM|REACTION_STEP|TIME',
+                              'ARGM|REACTION_STEP|YIELD_OTHER',
+                              'ARGM|REACTION_STEP|YIELD_PERCENT',
+                              'ARGM|WORKUP|TEMPERATURE',
+                              'ARGM|WORKUP|TIME',
+                              'ARGM|WORKUP|YIELD_OTHER',
+                              'ARGM|WORKUP|YIELD_PERCENT']
+
     for label in results_dict.keys():
-        if sum([e == 'O' for e in label.split('|')]) == 0:
+        if label in gold_label_result_keys:
+        # if sum([e == 'O' for e in label.split('|')]) == 0:
             precision = round(
                 results_dict[label]['tp'] / (results_dict[label]['tp'] + results_dict[label]['fp'] + 1e-6),
                 4)
@@ -546,6 +781,8 @@ def measure_ee_f1(model_ner, model_re, dataloader, device, i2arg, i2trigger, i2t
 
     f1_average = sum(f1_scores) / len(f1_scores)
     print('Average F1 Score: ', round(f1_average, 4))
+    end_time = time.time()
+    print(f'evaluation took:{(end_time - start_time)/60 :.2f} minutes')
     return f1_average
 
 

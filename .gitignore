@@ -9,3 +9,4 @@ data/ee_eval_data.pickle
 .idea/
 src/preprocessing/__pycache__/
 src/re_models/__pycache__/
+saved_models/

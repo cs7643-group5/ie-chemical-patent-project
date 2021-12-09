@@ -59,7 +59,7 @@ if __name__ == '__main__':
     model_re.load_state_dict(torch.load("src/re_models/r_bert_model_best.pt", map_location=device))
 
     model_ner = AutoModelForMaskedLM.from_pretrained(model_name).to(device)
-    model_ner.load_state_dict(torch.load("src/re_models/ner_task_2_v4/pytorch_model.bin", map_location=device))
+    model_ner.load_state_dict(torch.load("src/ner_models/ner_task_2_v4/pytorch_model.bin", map_location=device))
     ####################################################################################################################
     ####################################################################################################################
 

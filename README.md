@@ -37,15 +37,17 @@ The model will then be saved in the re_models directory
 
 
 
-### relation extraction custom model
+### relation extraction
 The model architecture for the custom relation extraction model
-is  seen in the re_models folder as custom_model.py.
-train_re.py is set up to use the model class in custom_model.py for
-training. 
+is  seen in the re_models folder as custom_model.py. The r_bert
+structure is seen in R_bert.py in the same folder.
 
 train_re.py is set up to take arguments using argparse. For example,
-python src/train_re.py -d 1 -t 'colab' -b 32 -lr 1e-5 -e 10
+python src/train_re.py -m 'r_bert' -d 1 -t 'colab' -b 32 -lr 1e-5 -e 10
 
+-m corresponds to the relation extraction model that is desired to be trained
+if 'r_bert' is passed the r_bert model will be used. If anything else is passed the custom model
+will be used. <br>
 -d corresponds to the percentage of data to use 1 is 100% 0.2 is 20%. <br>
 -t is training type, If 'colab' is specified data will be loaded from
 the pickle file ee_data.pickle. <br>

@@ -34,7 +34,7 @@ VERSION = 4
 
 # Do not alter
 TOKENIZER = AutoTokenizer.from_pretrained(MODEL_NAME)
-MODEL_UPLOAD_NAME = 'ner_task_' + str(TASK) + '_' + str(VERSION)
+MODEL_UPLOAD_NAME = 'ner_task_' + str(TASK) + '_v' + str(VERSION)
 
 # Can change these as needed
 BASELINE_BATCH_SIZE = 32

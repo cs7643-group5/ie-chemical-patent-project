@@ -23,15 +23,20 @@ else:
 print("Device: ", device)
 
 
-# Load Data Arguments
+# Model name is set to BioBert. Can be changed to another HuggingFace model if one is interested
 MODEL_NAME = "dmis-lab/biobert-base-cased-v1.2" # "dslim/bert-base-NER"
+# Vanilla Method. Can also select "CRF"
 MODEL_TYPE = "Vanilla"
+# Set to task 1 or 2
 TASK = 1
+# Specifies what version of the model you are saving
 VERSION = 4
 
+# Do not alter
 TOKENIZER = AutoTokenizer.from_pretrained(MODEL_NAME)
-MODEL_UPLOAD_NAME = 'ner_task_' + str(TASK)
+MODEL_UPLOAD_NAME = 'ner_task_' + str(TASK) + '_' + str(VERSION)
 
+# Can change these as needed
 BASELINE_BATCH_SIZE = 32
 BASELINE_LR = 5e-5
 
@@ -189,7 +194,7 @@ if MODEL_TYPE == 'Vanilla':
         if f1_micro > best_f1:
           best_f1 = f1_micro
           best_scores = [f1_micro, f1_macro, precision, recall]
-          save_dir = "ner_models/" + MODEL_UPLOAD_NAME + '_' + str(VERSION)
+          save_dir = "ner_models/" + MODEL_UPLOAD_NAME
         
         print('Best Scores (F1 Micro, F1 Macro, Precision, Recall): ', best_scores)
         model.save_pretrained(save_dir, push_to_hub=False)
@@ -267,7 +272,7 @@ elif MODEL_TYPE == 'CRF':
           best_f1 = f1_micro
           best_scores = [f1_micro, f1_macro, precision, recall]
 
-          save_dir = "ner_models/" + MODEL_UPLOAD_NAME + '_' + str(VERSION)
+          save_dir = "ner_models/" + MODEL_UPLOAD_NAME
           model.save_pretrained(save_dir, push_to_hub=False)
         
         print('Best Scores (F1 Micro, F1 Macro, Precision, Recall): ', best_scores)

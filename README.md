@@ -25,6 +25,18 @@ missed_entity_pairs.pickle.
 
 ## Training Models
 
+### NER models
+The model architecture for the NER model for task 1 and task 2
+is  seen in the re_models folder. They follow the huggingface model class format and can be loaded in as such.
+run_preprocessor.py is used to fine-tune the pretrained BioBERT models.
+
+One would make whatever changes in the hyperparameters directly in run_preprocessor.py and then would run
+python src/preprocessing/run_preprocessor.py
+
+The model will then be saved in the re_models directory
+
+
+
 ### relation extraction custom model
 The model architecture for the custom relation extraction model
 is  seen in the re_models folder as custom_model.py.
@@ -46,6 +58,16 @@ by the settings for the hyperparameters as the file name.
 
 
 ## Evaluation
+
+### NER models
+The model architecture for the NER model for task 1 and task 2
+is  seen in the re_models folder. They follow the huggingface model class format and can be loaded in as such.
+run_preprocessor.py is used to fine-tune the pretrained BioBERT models.
+
+One would make whatever changes in the hyperparameters directly in run_preprocessor.py and then would run
+python src/preprocessing/run_preprocessor.py
+
+The model will then be saved in the re_models directory
 
 ### Task 2
 task 2 evaluation is run with evaluate_task2.py with argument <br>

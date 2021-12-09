@@ -25,7 +25,7 @@ print("Device: ", device)
 
 
 # Set what version of model to load in
-VERSION = 1
+VERSION = 3
 MODEL_TYPE = "Vanilla" # CRF was not saved and will not work for evaluation
 # Task can be changed to 1 or 2
 TASK = 1

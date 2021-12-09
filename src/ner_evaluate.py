@@ -30,7 +30,7 @@ MODEL_TYPE = "Vanilla" # CRF was not saved and will not work for evaluation
 # Task can be changed to 1 or 2
 TASK = 1
 # Loading in directory of saved model
-MODEL_NAME = "ner_models/ner_task_" + str(TASK) + '_v' + str(VERSION) # "dslim/bert-base-NER"
+MODEL_NAME = "src/ner_models/ner_task_" + str(TASK) + '_v' + str(VERSION) # "dslim/bert-base-NER"
 
 
 

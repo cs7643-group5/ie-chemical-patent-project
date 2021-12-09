@@ -313,7 +313,7 @@ def map2ind():
 
 
 
-def colab_load_data(model_name, data, data_size=1):
+def colab_load_data(model_name, data, data_size=1, batch_size=32):
     ee_sentences_train, ee_labels_train = data[0]
     ee_sentences_val, ee_labels_val = data[1]
 
@@ -330,7 +330,7 @@ def colab_load_data(model_name, data, data_size=1):
     label2i, _ = map2ind()
     # i2label = {i:t for t, i in label2i.items()}
 
-    train_dataloader = DataLoader(train_dataset_re, batch_size=32,
+    train_dataloader = DataLoader(train_dataset_re, batch_size=batch_size,
                                   collate_fn=partial(transformer_collate_fn,
                                                      tokenizer=biobert_tokenizer,
                                                      label2id=label2i,

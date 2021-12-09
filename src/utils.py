@@ -119,6 +119,11 @@ def re_evaluate(model):
 
     measure_f1(model, val_dataloader, device, i2label)
 
+# stores the relation extraction data to be used for relation extraction models in a pickle folder
+store_data()
+
+# stores the evaluation data format for the event extraction task 2 in a pickle file
+missed_entity_pairs = ee_evaluation.store_data()
 
 
 

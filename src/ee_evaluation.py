@@ -364,8 +364,10 @@ def store_data():
     val_sents_1, val_tags_1 = preprocessor.read_folder('data/dev/')
     val_sents_2, val_tags_2 = preprocessor.read_folder('data/ee_dev/', labels=True, ner_task=2)
 
-    tag2i, i2tag = preprocessor.map2ind(val_tags_1)
-    trigger2i, i2trigger = preprocessor.map2ind(val_tags_2)
+    # need to check if this still works with the update
+    # may need to change back files
+    tag2i, i2tag = preprocessor.map2ind(tags=val_tags_1, ner_task=1)
+    trigger2i, i2trigger = preprocessor.map2ind(tags=val_tags_2, ner_task=2)
 
     data_val = (i2tag, i2trigger, sentences_val, ee_ids2arg_val, ee_ent_tag_ids_val, ent_sets_all_val, tag2wids_all_val)
 
@@ -418,6 +420,7 @@ def measure_ee_f1(model_ner, model_re, dataloader, device, i2arg, i2trigger, i2t
 
     # hard code in dictionary from ner model in task 1, not dynamic so need to adjust accordingly
     i2trigger = {0: 'CLS', 1: 'WORKUP', 2: 'REACTION_STEP', 3: 'O', 4: 'SEP'}
+
     # trigger2i = {t: i for i, t in i2trigger.items() if i != 0 and i != 1}
     trigger2i = {t: i for i, t in i2trigger.items()}
     num_tags = len(trigger2i)

@@ -7,7 +7,6 @@
 import preprocessor
 from transformers import AdamW, AutoTokenizer, AutoModelForMaskedLM, BertForSequenceClassification, AutoModelForTokenClassification, AutoModel
 from transformers import AutoModelForTokenClassification, AutoModel, get_linear_schedule_with_warmup
-from seqeval.metrics import classification_report
 import torch, itertools
 from conlleval import evaluate
 from torchcrf import CRF

@@ -12,3 +12,6 @@ src/re_models/__pycache__/
 saved_models/
 data/missed_entity_pairs.pickle
 src/__pycache__/
+src/re_models/ner_task_2_v4/
+src/re_models/r_bert_model_best.pt
+src/re_models/re_custom_model.pt

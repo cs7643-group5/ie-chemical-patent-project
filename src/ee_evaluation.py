@@ -431,7 +431,7 @@ def measure_ee_f1(model_ner, model_re, dataloader, device, i2arg, i2trigger, i2t
                 if trig == 'REACTION_STEP' or trig == 'WORKUP':
                     for tag in i2tag.values():
                         if tag != 'M' and tag != 'SPECIAL!' and tag != 'CLS' and tag != 'SEP' and tag != 'O':
-                            results_dict[arg +'| ' +trig +'| ' +tag] = {'tp': 0, 'fp': 0, 'fn': 0}
+                            results_dict[arg + '|' + trig + '|' + tag] = {'tp': 0, 'fp': 0, 'fn': 0}
     print('\n beginning model pipeline evaluation...')
     with torch.no_grad():
         for sentences, mask, ids2args_all, ent_tag_ids_all, ent_sets_all, tag2wids_all in tqdm(dataloader):

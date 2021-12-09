@@ -26,15 +26,13 @@ missed_entity_pairs.pickle.
 ## Training Models
 
 ### NER models
-The model architecture for the NER model for task 1 and task 2
-is  seen in the re_models folder. They follow the huggingface model class format and can be loaded in as such.
-run_preprocessor.py is used to fine-tune the pretrained BioBERT models.
+The model architecture for the NER model for task 1 and task 2 follows the huggingface model class format and can be loaded in and saved as such.
+src/ner_train.py is used to fine-tune the pretrained BioBERT models.
 
-One would make whatever changes in the hyperparameters directly in run_preprocessor.py and then would run
-python src/preprocessing/run_preprocessor.py
+One would make whatever changes in the hyperparameters directly in ner_train.py and then would run
+python src/preprocessing/ner_train.py
 
-The model will then be saved in the re_models directory
-
+The model will then be saved in the ner_models directory. 
 
 
 ### relation extraction
@@ -62,14 +60,13 @@ by the settings for the hyperparameters as the file name.
 ## Evaluation
 
 ### NER models
-The model architecture for the NER model for task 1 and task 2
-is  seen in the re_models folder. They follow the huggingface model class format and can be loaded in as such.
-run_preprocessor.py is used to fine-tune the pretrained BioBERT models.
+The saved models for Task 1 and Task 2 are in the ner_models folder. They follow the huggingface model class format and are loaded in as such.
+ner_evaluate.py is in the src folder is used to evaluate the models. Only BioBERT models are in this folder as they were the higher performing ones.
 
-One would make whatever changes in the hyperparameters directly in run_preprocessor.py and then would run
-python src/preprocessing/run_preprocessor.py
+One would need to run:
+python src/ner_evaluate.py
 
-The model will then be saved in the re_models directory
+One would need to modify the load directory to evaluate a newly trained model.
 
 ### Task 2
 task 2 evaluation is run with evaluate_task2.py with argument <br>

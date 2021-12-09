@@ -23,10 +23,17 @@ else:
 print("Device: ", device)
 
 
-# Load Data Arguments
-MODEL_NAME = "ner_models/ner_task_1_v1" # "dslim/bert-base-NER"
+
+# Set what version of model to load in
+VERSION = 2
 MODEL_TYPE = "Vanilla" # CRF was not saved and will not work for evaluation
+# Task can be changed to 1 or 2
 TASK = 1
+# Loading in directory of saved model
+MODEL_NAME = "ner_models/ner_task_" + str(TASK) + '_v' + str(VERSION) # "dslim/bert-base-NER"
+
+
+
 TOKENIZER = AutoTokenizer.from_pretrained("dmis-lab/biobert-base-cased-v1.2" )
 
 tag2i_train, i2tag_train, tag2i_val, i2tag_val, train_dataloader, val_dataloader = preprocessor.load_data(TASK, 16, "dmis-lab/biobert-base-cased-v1.2")

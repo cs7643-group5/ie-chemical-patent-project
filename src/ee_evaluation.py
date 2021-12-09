@@ -33,6 +33,9 @@ from collections import defaultdict
 def def_value():
     return "O"
 
+def def_value_missed_pairs():
+    return 0
+
 
 def create_re_examples(tag2wid_fixed, ids2arg,
                        sentences,
@@ -40,8 +43,10 @@ def create_re_examples(tag2wid_fixed, ids2arg,
                        previous_tagid, w, z,
                        ee_sentences_fixed, ee_labels_fixed,
                        ids2arg_sent_fixed,
+                       snippet_entity_pairs_captured_fixed,
                        replace_entities=True):
 
+    snippet_entity_pairs_captured = snippet_entity_pairs_captured_fixed.copy()
     ids2arg_sent = ids2arg_sent_fixed.copy()
     # ids2arg_per_sent = ids2arg_per_sent_fixed.copy()
     tag2wid = tag2wid_fixed.copy()
@@ -112,11 +117,16 @@ def create_re_examples(tag2wid_fixed, ids2arg,
         pdb.set_trace()
         raise Exception('ids2arg tuple do not contain the same keys')
 
-    return ee_sentences, ee_labels, tag2wid, ids2arg_sent
+    for key in ids2arg_sent[z][0].keys():
+        snippet_entity_pairs_captured.add(key)
+
+    return ee_sentences, ee_labels, tag2wid, ids2arg_sent, snippet_entity_pairs_captured
 
 
-def read_brat_format_ee(ann_filename, txt_filename):
+def read_brat_format_ee(ann_filename, txt_filename, missed_entity_pairs_fixed):
     # read in raw text from patent snippet
+    missed_entity_pairs = missed_entity_pairs_fixed.copy()
+    snippet_entity_pairs_captured = set()
     snippet = ""
     for line in open(txt_filename, encoding="utf8").readlines():
         snippet += line
@@ -128,6 +138,7 @@ def read_brat_format_ee(ann_filename, txt_filename):
         char_tags = ['O'] * len(snippet)
         id_tags = ['O'] * len(snippet)
         ids2arg = defaultdict(def_value)
+        snippet_id_2_label = {}
 
         # go through each line of the annotation file and place the tag over every character position in char_tags
         # this will repeat the tag multiple times which is inefficient but it's a good way to get the data in the right form
@@ -140,6 +151,7 @@ def read_brat_format_ee(ann_filename, txt_filename):
                 tag = line_seg[1]
                 start_i = int(line_seg[2])
                 end_i = int(line_seg[3])
+                snippet_id_2_label[tag_id] = tag
                 char_tags[start_i:end_i] = [tag] * (end_i - start_i)
                 id_tags[start_i:end_i] = [tag_id] * (end_i - start_i)
             elif tag_id[0] == 'R':
@@ -193,12 +205,12 @@ def read_brat_format_ee(ann_filename, txt_filename):
                 if len(ee_ent_tag_ids[z]) != len(sentences[z]):
                     raise Exception('nope')
                 ent_sets[z] = entity_set
-                ee_sentences, ee_labels, tag2wid, ids2arg_sent = create_re_examples(tag2wid, ids2arg,
+                ee_sentences, ee_labels, tag2wid, ids2arg_sent, snippet_entity_pairs_captured = create_re_examples(tag2wid, ids2arg,
                                                              sentences,
                                                              trigger_set, entity_set,
                                                              previous_tagid, w, z,
                                                              ee_sentences, ee_labels,
-                                                            ids2arg_sent)
+                                                            ids2arg_sent, snippet_entity_pairs_captured)
                 tag2wids[z] = tag2wid
 
                 if len(ids2arg_sent[z]) != 2:
@@ -258,12 +270,12 @@ def read_brat_format_ee(ann_filename, txt_filename):
             raise Exception('nope')
 
         ent_sets[z] = entity_set
-        ee_sentences, ee_labels, tag2wid,  ids2arg_sent = create_re_examples(tag2wid, ids2arg,
+        ee_sentences, ee_labels, tag2wid,  ids2arg_sent, snippet_entity_pairs_captured = create_re_examples(tag2wid, ids2arg,
                                                      sentences,
                                                      trigger_set, entity_set,
                                                      previous_tagid, w, z,
                                                      ee_sentences, ee_labels,
-                                                     ids2arg_sent)
+                                                     ids2arg_sent, snippet_entity_pairs_captured)
         if len(ids2arg_sent[z]) != 2:
             pdb.set_trace()
             raise Exception('tuple size for ids and args are not equal to 2')
@@ -275,9 +287,18 @@ def read_brat_format_ee(ann_filename, txt_filename):
         # if len(sentences) != len(ee_ent_tag_ids):
         #     pdb.set_trace()
         #     raise Exception('Entity tag tuples do not match sentence length')
+        # catch list of relations that are missed due to sentence tokenization
+        # missed_entity_pairs = defaultdict(lambda: 0)
+        # pdb.set_trace()
 
+        for (trigger_id, entity_id), relation_label in ids2arg.items():
+            if (trigger_id, entity_id) not in snippet_entity_pairs_captured:
+                trigger_label = snippet_id_2_label[trigger_id]
+                entity_label = snippet_id_2_label[entity_id]
+                full_label = relation_label + '|' + trigger_label + '|' + entity_label
+                missed_entity_pairs[full_label] += 1
 
-    return sentences, tags, ee_sentences, ee_labels,  ids2arg_sent , ee_ent_tag_ids, ent_sets, tag2wids
+    return sentences, tags, ee_sentences, ee_labels,  ids2arg_sent , ee_ent_tag_ids, ent_sets, tag2wids, missed_entity_pairs
 
 
 def read_folder_ee(path):
@@ -290,13 +311,14 @@ def read_folder_ee(path):
     ee_ent_tag_ids_all = []
     ent_sets_all = []
     tag2wids_all = []
+    missed_entity_pairs = defaultdict(def_value_missed_pairs)
 
     for s_file, e_file in zip(files[:-1], files[1:]):
         if s_file[-3:] == 'ann' and e_file[-3:] == 'txt':
             s_id = re.findall(r'\d+', s_file)
             e_id = re.findall(r'\d+', e_file)
             if s_id[0] == e_id[0]:
-                sents, tags, ee_sents, ee_labels, ee_ids2arg, ee_ent_tag_ids, ent_sets, tag2wids = read_brat_format_ee(path + s_file, path + e_file)
+                sents, tags, ee_sents, ee_labels, ee_ids2arg, ee_ent_tag_ids, ent_sets, tag2wids, missed_entity_pairs = read_brat_format_ee(path + s_file, path + e_file, missed_entity_pairs)
                 sents_all.extend(sents)
                 tags_all.extend(tags)
                 sents_ee_all.extend(ee_sents)
@@ -313,12 +335,16 @@ def read_folder_ee(path):
     #     pdb.set_trace()
     #     raise Exception('Entity tag tuples do not match sentence length')
 
+    print('missed pairs due to sentence tokenization summary')
+    for k, v in missed_entity_pairs.items():
+        print(f'type: {k}, total number: {v}')
+
     for i, (s, e_t_id) in enumerate(zip(sents_all, ee_ent_tag_ids_all)):
         if len(s) != len(e_t_id):
             pdb.set_trace()
             raise Exception(f'size mismatch at {i}')
 
-    return sents_all, tags_all, sents_ee_all, labels_ee_all, ee_ids2arg_all, ee_ent_tag_ids_all, ent_sets_all, tag2wids_all
+    return sents_all, tags_all, sents_ee_all, labels_ee_all, ee_ids2arg_all, ee_ent_tag_ids_all, ent_sets_all, tag2wids_all, missed_entity_pairs
 
 
 # def map2ind(tags):
@@ -432,9 +458,9 @@ def transformer_collate_fn(batch, tokenizer, use_wordpiece=False):
 
 
 def store_data():
-    sentences_train, tags_train, ee_sentences_train, ee_labels_train, ee_ids2arg_train, ee_ent_tag_ids_train, ent_sets_all_train, tag2wids_all_train = read_folder_ee(
-        'data/ee_train/')
-    sentences_val, tags_val, ee_sentences_val, ee_labels_val, ee_ids2arg_val, ee_ent_tag_ids_val, ent_sets_all_val, tag2wids_all_val = read_folder_ee(
+    # sentences_train, tags_train, ee_sentences_train, ee_labels_train, ee_ids2arg_train, ee_ent_tag_ids_train, ent_sets_all_train, tag2wids_all_train = read_folder_ee(
+    #     'data/ee_train/')
+    sentences_val, tags_val, ee_sentences_val, ee_labels_val, ee_ids2arg_val, ee_ent_tag_ids_val, ent_sets_all_val, tag2wids_all_val, missed_entity_pairs_val = read_folder_ee(
         'data/ee_dev/')
 
     for s, e_t_id in zip(sentences_val, ee_ent_tag_ids_val):
@@ -453,6 +479,10 @@ def store_data():
 
     with open("data/ee_eval_data.pickle", "wb") as f:
         pickle.dump(data_val, f)
+
+    with open("data/missed_entity_pairs.pickle", "wb") as f:
+        pickle.dump(missed_entity_pairs_val, f)
+
 
     return None
 
@@ -765,9 +795,19 @@ def measure_ee_f1(model_ner, model_re, dataloader, device, i2arg, i2trigger, i2t
                               'ARGM|WORKUP|TIME',
                               'ARGM|WORKUP|YIELD_OTHER',
                               'ARGM|WORKUP|YIELD_PERCENT']
+
+    # catch the cases for false negatives of missed pairs due to sentence segmentation
+    with open("data/missed_entity_pairs.pickle", "rb") as f:
+        missed_entity_pairs = pickle.load(f)
+
+    for label_type, num_missed in missed_entity_pairs.items():
+        results_dict[label_type]['fn'] += num_missed
+
     tp_total = 0
     fn_total = 0
     fp_total = 0
+    print("\\begin{table}[t] \n \\caption{results of base custom relation extraction model} \n \\label{tab:table_name}\n \\begin{tabular}{||cccc||}\n \\hline")
+    print("Relation Type & Precision & Recall & F1    \\\\ \n \\hline \\hline")
     for label in results_dict.keys():
         if label in gold_label_result_keys:
         # if sum([e == 'O' for e in label.split('|')]) == 0:
@@ -783,16 +823,21 @@ def measure_ee_f1(model_ner, model_re, dataloader, device, i2arg, i2trigger, i2t
             fp_total += results_dict[label]['fp']
             if f1 > 0.0000:
                 f1_scores.append(f1)
-            print("Event Label: ", label, ", Precision: ", precision, ", Recall: ", recall, ", F1: ", f1)
+            print(f"{label} & {precision :.3f} & {recall :.3f} & {f1 :.3f}    \\\\ \n \\hline")
+            #print("Event Label: ", label, ", Precision: ", precision, ", Recall: ", recall, ", F1: ", f1)
 
     precision_overall = round(tp_total / (tp_total + fp_total + 1e-6), 4)
     recall_overall = round(tp_total / (tp_total + fn_total + 1e-6), 4)
     f1_overall = round((2 * precision_overall * recall_overall) / (precision_overall + recall_overall + 1e-6), 4)
     f1_average = sum(f1_scores) / len(f1_scores)
-    print('Average non-zero F1 Score: ', round(f1_average, 4))
+    #print('Average non-zero F1 Score: ', round(f1_average, 4))
+
+    print(f"\\hline \n overall & {precision_overall :.3f} & {recall_overall :.3f} & {f1_overall :.3f}    \\\\ \n \\hline")
+    print('\\end{tabular} \n \\end{table}')
+
     print("Overall Performance, Precision: ", precision_overall, ", Recall: ", recall_overall, ", F1: ", f1_overall)
     end_time = time.time()
-    print(f'evaluation took:{(end_time - start_time)/60 :.2f} minutes')
+    #print(f'evaluation took:{(end_time - start_time)/60 :.2f} minutes')
     return f1_average
 
 

@@ -13,7 +13,8 @@ import pickle
 import argparse
 from tqdm import tqdm
 
-from re_models.custom_model import RelationClassifier
+from re_models import custom_model
+from re_models import R_bert
 from preprocessing import ee_preprocessor
 # from preprocessing.ee_preprocessor import PatentDataset
 # from torch.utils.data import Dataset, DataLoader
@@ -200,6 +201,8 @@ if __name__ == '__main__':
     model_name = "dmis-lab/biobert-base-cased-v1.2"
     bert_model = AutoModel.from_pretrained(model_name)
     parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--re_model", type=str,
+                        help="pass in the model type for relation extraction either r_bert or custom")
     parser.add_argument("-d", "--data_size", type=float,
                         help="pass the percentage of data to use")
 
@@ -214,6 +217,7 @@ if __name__ == '__main__':
     parser.add_argument("-e", "--num_epochs", type=int,
                         help="pass num_epochs")
     args = parser.parse_args()
+    re_model_name = args.re_model if args.re_model is not None else 'custom'
     batch_size = args.batch_size if args.batch_size is not None else 32
     data_amount = args.data_size if args.data_size is not None else 1
     N_EPOCHS = args.num_epochs if args.num_epochs is not None else 3
@@ -255,7 +259,12 @@ if __name__ == '__main__':
         print('using cpu')
         device = torch.device('cpu')
 
-    model = RelationClassifier(bert_model).to(device)
+    if re_model_name == 'r_bert':
+        print("using r_bert model")
+        model = R_bert.RelationClassifier(bert_model).to(device)
+    else:
+        print("using custom model")
+        model = custom_model.RelationClassifier(bert_model).to(device)
     model.apply(init_classification_head_weights)
     model.to(device)
     print('Model Initialized')
@@ -303,7 +312,7 @@ if __name__ == '__main__':
     print(f'completed training in {(train_end_time - train_start_time) / 60:.2f} minutes')
 
     print('saving model')
-    torch.save(model.state_dict(), f"src/re_models/re_custom_model_batch{batch_size}_lr{LR}_epochs{N_EPOCHS}.pt")
+    torch.save(model.state_dict(), f"src/re_models/{re_model_name}_batch{batch_size}_lr{LR}_epochs{N_EPOCHS}.pt")
     # print('test loading model')
     # loaded_model = RelationClassifier(bert_model).to(device)
     # loaded_model.load_state_dict(torch.load("results/re_custom_model.pt", map_location=device))

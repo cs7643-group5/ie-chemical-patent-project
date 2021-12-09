@@ -11,6 +11,7 @@ import torch.nn.functional as F
 import time
 import pickle
 import argparse
+from tqdm import tqdm
 
 from re_models.custom_model import RelationClassifier
 from preprocessing import ee_preprocessor
@@ -26,7 +27,6 @@ def count_parameters(model: nn.Module):
 
 # Universal function to compare predicted tags and actual tags
 def measure_f1(model, dataloader, device, i2label):
-
     model.eval()
 
     results_dict = {v: {'tp': 0, 'fp': 0, 'fn': 0} for v in i2label.values()}
@@ -61,10 +61,13 @@ def measure_f1(model, dataloader, device, i2label):
     tp_total = 0
     fn_total = 0
     fp_total = 0
+    print('\n')
     for label in i2label.values():
         if label != 'O':
-            precision = round(results_dict[label]['tp'] / (results_dict[label]['tp'] + results_dict[label]['fp'] + 1e-6), 4)
-            recall = round(results_dict[label]['tp'] / (results_dict[label]['tp'] + results_dict[label]['fn'] + 1e-6), 4)
+            precision = round(
+                results_dict[label]['tp'] / (results_dict[label]['tp'] + results_dict[label]['fp'] + 1e-6), 4)
+            recall = round(results_dict[label]['tp'] / (results_dict[label]['tp'] + results_dict[label]['fn'] + 1e-6),
+                           4)
             f1 = round((2 * precision * recall) / (precision + recall + 1e-6), 4)
             f1_scores.append(f1)
             print("Entity Label: ", label, ", Precision: ", precision, ", Recall: ", recall, ", F1: ", f1)
@@ -78,6 +81,17 @@ def measure_f1(model, dataloader, device, i2label):
     f1_average = sum(f1_scores) / len(f1_scores)
     print('Average F1 Score: ', round(f1_average, 4))
     print("Overall Performance, Precision: ", precision_overall, ", Recall: ", recall_overall, ", F1: ", f1_overall)
+
+    # for label in i2label.values():
+    #     if label != 'O':
+    #         precision = round(results_dict[label]['tp'] / (results_dict[label]['tp'] + results_dict[label]['fp'] + 1e-6), 4)
+    #         recall = round(results_dict[label]['tp'] / (results_dict[label]['tp'] + results_dict[label]['fn'] + 1e-6), 4)
+    #         f1 = round((2 * precision * recall) / (precision + recall + 1e-6), 4)
+    #         f1_scores.append(f1)
+    #         print("Entity Label: ", label, ", Precision: ", precision, ", Recall: ", recall, ", F1: ", f1)
+
+    # f1_average = sum(f1_scores) / len(f1_scores)
+    # print('Average F1 Score: ', round(f1_average, 4))
     return f1_average
 
 
@@ -191,9 +205,24 @@ if __name__ == '__main__':
 
     parser.add_argument("-t", "--train_type", type=str,
                         help="pass training environment for example 'colab'")
+    parser.add_argument("-b", "--batch_size", type=int,
+                        help="pass batch size")
+
+    parser.add_argument("-lr", "--lr_rate", type=float,
+                        help="pass learning rate")
+
+    parser.add_argument("-e", "--num_epochs", type=int,
+                        help="pass num_epochs")
     args = parser.parse_args()
+    batch_size = args.batch_size if args.batch_size is not None else 32
     data_amount = args.data_size if args.data_size is not None else 1
+    N_EPOCHS = args.num_epochs if args.num_epochs is not None else 3
+    LR = args.lr_rate if args.lr_rate is not None else 1e-5
     train_type = args.train_type
+    print('hyper parameters')
+    print(f'batch_size: {batch_size}')
+    print(f'epochs: {N_EPOCHS}')
+    print(f'LR: {LR}')
     print(f"using {data_amount * 100:.2f}% of training and validation data")
     print("loading data...")
     data_start = time.time()
@@ -202,7 +231,8 @@ if __name__ == '__main__':
         with open("data/ee_data.pickle", "rb") as f:
             data_brat = pickle.load(f)
         train_dataloader, val_dataloader, biobert_tokenizer = ee_preprocessor.colab_load_data(model_name, data_brat,
-                                                                                              data_size=data_amount)
+                                                                                              data_size=data_amount,
+                                                                                              batch_size=batch_size)
     else:
         train_dataloader, val_dataloader, biobert_tokenizer = ee_preprocessor.load_data_ee(model_name)
     data_end = time.time()
@@ -211,10 +241,10 @@ if __name__ == '__main__':
     bert_model.resize_token_embeddings(len(biobert_tokenizer))  # adds 4 to account for relation tokens
 
     # define hyperparameters
-    BATCH_SIZE = 10
-    LR = 1e-5
+    # BATCH_SIZE = 10
+    # LR = 1e-5
     WEIGHT_DECAY = 0
-    N_EPOCHS = 3
+    # N_EPOCHS = 3
     CLIP = 1.0
 
     # define models, move to device, and initialize weights
@@ -237,24 +267,24 @@ if __name__ == '__main__':
 
     print(f'The model has {count_parameters(model):,} trainable parameters')
 
-    print('running initial performance metrics')
-    start_time = time.time()
-    train_loss = evaluate(model, train_dataloader, device)
-    train_f1 = measure_f1(model, train_dataloader, device, i2label)
+    # print('running initial performance metrics')
+    # start_time = time.time()
+    # train_loss = evaluate(model, train_dataloader, device)
+    # train_f1 = measure_f1(model, train_dataloader, device, i2label)
 
-    valid_loss = evaluate(model, val_dataloader, device)
-    valid_f1 = measure_f1(model, val_dataloader, device, i2label)
+    # valid_loss = evaluate(model, val_dataloader, device)
+    # valid_f1 = measure_f1(model, val_dataloader, device, i2label)
 
-    print(f'Initial Train Loss: {train_loss:.3f}')
-    print(f'Initial Train F1: {train_f1:.3f}')
-    print(f'Initial Valid Loss: {valid_loss:.3f}')
-    print(f'Initial Valid F1: {valid_f1:.3f}')
-    end_time = time.time()
-    print(f'completed initial performance metrics in {(end_time - start_time) / 60:.2f} minutes')
+    # print(f'Initial Train Loss: {train_loss:.3f}')
+    # print(f'Initial Train F1: {train_f1:.3f}')
+    # print(f'Initial Valid Loss: {valid_loss:.3f}')
+    # print(f'Initial Valid F1: {valid_f1:.3f}')
+    # end_time = time.time()
+    # print(f'completed initial performance metrics in {(end_time - start_time) / 60:.2f} minutes')
 
     print(f'training for {N_EPOCHS} epochs')
     train_start_time = time.time()
-    for epoch in range(N_EPOCHS):
+    for epoch in tqdm(range(N_EPOCHS)):
         start_time = time.time()
         train_loss = train(model, train_dataloader, optimizer, device, CLIP, scheduler)
         end_time = time.time()
@@ -273,7 +303,7 @@ if __name__ == '__main__':
     print(f'completed training in {(train_end_time - train_start_time) / 60:.2f} minutes')
 
     print('saving model')
-    torch.save(model.state_dict(), "saved_models/re_custom_model.pt")
+    torch.save(model.state_dict(), f"src/re_models/re_custom_model_batch{batch_size}_lr{LR}_epochs{N_EPOCHS}.pt")
     # print('test loading model')
     # loaded_model = RelationClassifier(bert_model).to(device)
     # loaded_model.load_state_dict(torch.load("results/re_custom_model.pt", map_location=device))

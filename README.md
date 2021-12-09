@@ -1,7 +1,7 @@
 # ie-chemical-patent-project
 
 ## Dataset
-the data can be obtained from the ChEMU competition through the following link. http://chemu2020.eng.unimelb.edu.au.
+The data can be obtained from the ChEMU competition through the following link. http://chemu2020.eng.unimelb.edu.au.
 The competition restricted us from sharing it or making it available to any other party. To anyone training or evaluating our models, please download the data from the link above and place the training and development sets in the data folder.
 
 ## Data Pre-processing

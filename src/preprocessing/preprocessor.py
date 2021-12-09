@@ -1,25 +1,18 @@
+# Import packages
 from nltk.tokenize import WhitespaceTokenizer
 from nltk.tokenize.punkt import PunktSentenceTokenizer
-
 import pdb
-
-
 from functools import partial
 from transformers import AutoTokenizer, AutoModelForMaskedLM
-
-
 import torch
-
 import numpy as np
-
 import re
 import os
-
 from io import open
-
-
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
+
+
 
 
 def read_brat_format(ann_filename, txt_filename, ner_task=1):
@@ -83,31 +76,6 @@ def read_brat_format(ann_filename, txt_filename, ner_task=1):
         ''' need a more efficient way to run through test snippets also not sure yet what format we need for test '''
         sentences = None
         tags = None
-        # sent_spans = list(PunktSentenceTokenizer().span_tokenize(snippet))  # get spans for sentences
-        # sentences = [[]] * len(sent_spans)  # create an empty list of lists for sentences
-        # z = 0
-        # tags = None
-        # for span_b, span_e in WhitespaceTokenizer().span_tokenize(snippet):
-        #     # index out to get the word
-        #     word = snippet[span_b:span_e]
-        #     # make sure to get rid of leading and trailing non-alphanumeric characters
-        #     word = re.sub(r'^\W+|\W+$', '', word)
-        #
-        #     # if a token corresponding to the next sequence is reached increase z and append END token
-        #     if span_b >= sent_spans[z][1]:
-        #         sentences[z].append('-END-')
-        #         z += 1
-        #
-        #     # if the current sentence is empty place the START token
-        #     if len(sentences[z]) == 0:
-        #         sentences[z] = ['-START-']
-        #
-        #     sentences[z].append(word)
-        #
-        # # last iterations ending tokens will be missing so have to add in here
-        # sentences[z].append('-END-')
-        #
-        # # sentences = sent_tokenize(snippet)
 
     return sentences, tags
 
@@ -135,11 +103,22 @@ def read_folder(path, labels=True, ner_task=1):
     return sents_all, tags_all
 
 
-def map2ind(tags):
-    tag2i = {t: i+2 for i, t in enumerate(set(tag for sent in tags for tag in sent))}  
-    tag2i['M'] = 0
-    tag2i['SPECIAL!'] = 1
-    i2tag = {i:t for t, i in tag2i.items()}
+def map2ind(tags, ner_task):
+
+    list_tags = sorted(list(set(tag for sent in tags for tag in sent)))
+
+    if ner_task == 1:
+        tag2i = {t: i+1 for i, t in enumerate(list_tags)} 
+        tag2i['M'] = 0
+        i2tag = {i:t for t, i in tag2i.items()}
+
+    else:
+        tag2i = {t: i for i, t in enumerate(set(tag for sent in tags for tag in sent))}  
+        i2tag = {i:t for t, i in tag2i.items()}
+
+    print()
+    print(tag2i)
+    print()
 
     return tag2i, i2tag
 
@@ -207,25 +186,22 @@ def load_biobert(name):
     return tokenizer, model
 
 
-def load_data(ner_task=1):
+def load_data(ner_task=1, batch_size = 32, model_name = "dmis-lab/biobert-base-cased-v1.2"):
     if ner_task == 1:
         train_sents, train_tags = read_folder('data/train/')
         val_sents, val_tags = read_folder('data/dev/')
+    
     elif ner_task == 2:
         train_sents, train_tags = read_folder('data/ee_train/', labels=True, ner_task=2)
         val_sents, val_tags = read_folder('data/ee_dev/', labels=True, ner_task=2)
 
-    # test_sents, _ = read_folder('data/chemu.ner.test/', labels=False)
-
-    model_name = "dmis-lab/biobert-base-cased-v1.2"
+    tag2i_train, i2tag_train = map2ind(train_tags, ner_task)
+    tag2i_val, i2tag_val = map2ind(val_tags, ner_task)
 
     biobert_tokenizer, biobert_model = load_biobert(model_name)
 
-    tag2i_train, i2tag_train = map2ind(train_tags)
-    tag2i_val, i2tag_val = map2ind(val_tags)
-
     train_dataset = PatentDataset(train_sents, train_tags)
-    train_dataloader = DataLoader(train_dataset, batch_size=32,
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size,
                                   collate_fn=partial(transformer_collate_fn,
                                                      tokenizer=biobert_tokenizer,
                                                      tag2id=tag2i_train,
@@ -233,7 +209,7 @@ def load_data(ner_task=1):
                                   shuffle=True)
 
     val_dataset = PatentDataset(val_sents, val_tags)
-    val_dataloader = DataLoader(val_dataset, batch_size=32,
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size,
                                   collate_fn=partial(transformer_collate_fn,
                                                      tokenizer=biobert_tokenizer,
                                                      tag2id=tag2i_val,
@@ -241,5 +217,3 @@ def load_data(ner_task=1):
                                   shuffle=True)
 
     return tag2i_train, i2tag_train, tag2i_val, i2tag_val, train_dataloader, val_dataloader
-
-

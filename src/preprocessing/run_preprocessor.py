@@ -31,26 +31,37 @@ print("Device: ", device)
 
 # Load Data Arguments
 MODEL_NAME = "dmis-lab/biobert-base-cased-v1.2" # "dslim/bert-base-NER"
+MODEL_TYPE = "Vanilla"
+TASK = 1
+VERSION = 4
+
 TOKENIZER = AutoTokenizer.from_pretrained(MODEL_NAME)
+MODEL_UPLOAD_NAME = 'ner_task_' + str(TASK)
 
 BASELINE_BATCH_SIZE = 32
 BASELINE_LR = 5e-5
-BASELINE_EPOCHS = 50
 
 BATCH_SIZE = 16
+# Learning Rate is adjusted based on batch size, increasing by the root of batch size.
 LR = BASELINE_LR * np.sqrt(BATCH_SIZE / BASELINE_BATCH_SIZE)
-EPOCHS = int(round(BASELINE_EPOCHS / (np.sqrt(BATCH_SIZE / BASELINE_BATCH_SIZE))))
+EPOCHS = 50
 
-print("Batch Size: ", BATCH_SIZE)
-print("Learning Rate: ", LR)
-print("Epochs: ", EPOCHS)
-print()
-
-tag2i_train, i2tag_train, tag2i_val, i2tag_val, train_dataloader, val_dataloader = preprocessor.load_data(BATCH_SIZE, MODEL_NAME)
+tag2i_train, i2tag_train, tag2i_val, i2tag_val, train_dataloader, val_dataloader = preprocessor.load_data(TASK, BATCH_SIZE, MODEL_NAME)
 
 NUM_TAGS = max(list(i2tag_train.keys())) + 1
 DROPOUT = 0.1
 scheduler = None
+
+best_model = None
+best_f1 = 0
+
+print()
+print("Batch Size: ", BATCH_SIZE)
+print("Learning Rate: ", LR)
+print("Epochs: ", EPOCHS)
+print("Number of Tags: ", NUM_TAGS)
+print()
+
 
 
 # Universal function to compare predicted tags and actual tags
@@ -60,21 +71,26 @@ def measure_results(results, label_tags):
 
     # classification_report([[item for item in sublist0] for sublist1 in results for sublist0 in sublist1], [[item for item in sublist0] for sublist1 in results for sublist0 in sublist1])
     f1_scores = []
+    precision_scores = []
+    recall_scores = []
+    tags_count = []
 
     for tag in i2tag_train.values():
 
-        lower_tag = str(tag).lower().strip()
-        if lower_tag in ['sep', 'cls', 'm', 'special!']:
+        if str(tag).lower().strip() in ['sep', 'cls', 'm']:
             continue
         
-        tp, fp, fn = 0, 0, 0
+        tp_overall, fp_overall, fn_overall, tp, fp, fn = 0, 0, 0, 0, 0, 0
 
         for result, label in zip(pred_tags, true_tags):
             if result == tag and label == tag:
+                tp_overall += 1
                 tp += 1
             if result == tag and label != tag:
+                fp_overall += 1
                 fp += 1
             if result != tag and label == tag:
+                fn_overall += 1
                 fn += 1
         
         precision = round(tp / (tp + fp + 1e-6), 4)
@@ -82,26 +98,27 @@ def measure_results(results, label_tags):
         f1 = round((2 * precision * recall) / (precision + recall + 1e-6), 4)
 
         f1_scores.append(f1)
+
+        count = tp + fn
+        tags_count.append(count)
+
         print("Tag: ", tag, ", Precision: ", precision, ", Recall: ", recall, ", F1: ", f1)
     
-    f1_average = sum(f1_scores)/len(f1_scores)
-    print('Average F1 Score: ', round(f1_average, 4))
-    return f1_average
+    f1_micro_average = sum(f1_scores)/len(f1_scores)
+    precision_average = round(tp_overall / (tp_overall + fp_overall + 1e-6), 6)
+    recall_average = round(tp_overall / (tp_overall + fn_overall + 1e-6), 6)
+    f1_macro_average = round((2 * precision_average * recall_average) / (precision_average + recall_average + 1e-6), 6)
+
+    print()
+    print('Average F1 Micro Score: ', round(f1_micro_average, 4))
+    print('Precision Score: ', round(precision_average, 6))
+    print('Recall Score: ', round(recall_average, 6))
+    print('Average F1 Macro Score: ', round(f1_macro_average, 6))
+
+    return f1_micro_average, f1_macro_average,precision_average, recall_average 
 
 
-
-#####################################################################
-# Vanilla
-#####################################################################
-
-model = AutoModelForMaskedLM.from_pretrained(MODEL_NAME).to(device)
-# model = BertForSequenceClassification.from_pretrained(model_name, num_labels=num_tags).to(device)
-# model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_tags).to(device)
-# print(model)
-
-optim = AdamW(model.parameters(), lr = LR)
-scheduler = get_linear_schedule_with_warmup(optim, len(train_dataloader), len(train_dataloader)*EPOCHS, last_epoch = -1 )
-
+# Vanilla Inference - Getting predictions and concatenating them along with labels in lists of lists
 def validate():
     model.eval()
     
@@ -110,319 +127,155 @@ def validate():
 
     for input_ids, mask, labels in val_dataloader:
         outputs = model(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
-        outputs = outputs.logits.argmax(dim = -1)
+        outputs = outputs.logits[:, :, :NUM_TAGS].argmax(dim = -1)
         a, b = outputs.shape
         
-        try:
-          results = [[i2tag_val[outputs[i, j].item()] for j in range(b)] for i in range(a)]
-          label_tags = [[i2tag_val[labels[i, j].item()] for j in range(b)] for i in range(a)] 
-          
-          results_full.append(results)
-          labels_full.append(label_tags)
+        results = [[i2tag_val[outputs[i, j].item()] for j in range(b)] for i in range(a)]
+        label_tags = [[i2tag_val[labels[i, j].item()] for j in range(b)] for i in range(a)] 
+
+        results_full.append(results)
+        labels_full.append(label_tags)
         
-        except:
-          pass
+    return results_full, labels_full
+
+
+# Same as validate funtion except customized for CRF
+def crf_decoder():
+    
+    results_full = []
+    labels_full = []
+
+    for input_ids, mask, labels in val_dataloader:
+        emissions = model.return_emissions(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
+        outputs = model.crf.decode(emissions)
+        a, b = len(outputs), len(outputs[0])
+        
+        results = [[i2tag_val[outputs[i][j]] for j in range(b)] for i in range(a)]
+        label_tags = [[i2tag_val[labels[i][j].item()] for j in range(b)] for i in range(a)] 
+        
+        results_full.append(results)
+        labels_full.append(label_tags)
 
     return results_full, labels_full
 
 
-best_model = None
-best_f1 = 0
-
-# BASELINE TRAINING SCRIPT
-for epoch in range(EPOCHS):
-    print()
-    print("Epoch: ", epoch)
-    print('LR: ', optim.param_groups[0]["lr"])
-
-    model.train()
-    for input_ids, mask, labels in train_dataloader:
-        optim.zero_grad()
-        outputs = model(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
-        loss = outputs.loss
-        loss.backward()
-        optim.step()
-        if scheduler != None:
-          scheduler.step()
-    
-    print(f"loss on epoch {epoch} = {loss}")
-    results, label_tags = validate()
-    f1 = measure_results(results, label_tags)
-
-    if f1 > best_f1:
-      best_f1 = f1
-
-print('Best F1 Score: ', best_f1)
 
 
-######################################################################
-# CRF
-######################################################################
+if MODEL_TYPE == 'Vanilla':
 
-# # Iterating over the validation_dataloader and getting the emissions. Using the emissions, we run crf.decode
-# def crf_decoder():
-    
-#     results_full = []
-#     labels_full = []
+    #####################################################################
+    # Vanilla
+    #####################################################################
 
-#     for input_ids, mask, labels in val_dataloader:
-#         emissions = model.return_emissions(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
-#         outputs = model.crf.decode(emissions)
-#         a, b = len(outputs), len(outputs[0])
+    model = AutoModelForMaskedLM.from_pretrained(MODEL_NAME).to(device)
+
+    optim = AdamW(model.parameters(), lr = LR)
+    scheduler = get_linear_schedule_with_warmup(optim, len(train_dataloader), len(train_dataloader)*EPOCHS, last_epoch = -1 )
+
+    # BASELINE TRAINING SCRIPT
+    for epoch in range(EPOCHS):
+        print()
+        print("Epoch: ", epoch)
+        print('LR: ', optim.param_groups[0]["lr"])
+
+        model.train()
+        for input_ids, mask, labels in train_dataloader:
+            optim.zero_grad()
+            outputs = model(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
+            loss = outputs.loss
+            loss.backward()
+            optim.step()
+            if scheduler != None:
+              scheduler.step()
         
-#         #print(a, b, len(labels), len(labels[0]))
-#         results = [[i2tag_val[outputs[i][j]] for j in range(b)] for i in range(a)]
-#         label_tags = [[i2tag_val[labels[i][j].item()] for j in range(b)] for i in range(a)] 
+        print(f"loss on epoch {epoch} = {loss}")
+        results, label_tags = validate()
+        f1_micro, f1_macro, precision, recall = measure_results(results, label_tags)
+
+        if f1_micro > best_f1:
+          best_f1 = f1_micro
+          best_scores = [f1_micro, f1_macro, precision, recall]
+          save_dir = "src/re_models/" + MODEL_UPLOAD_NAME + '_' + str(VERSION)
         
-#         results_full.append(results)
-#         labels_full.append(label_tags)
-
-#     return results_full, labels_full
-
-
-# # CRF TRAINING SCRIPT
-# class CustomBERTModel(nn.Module):
-#     def __init__(self, num_tags = 15):
-#         super(CustomBERTModel, self).__init__()
-#         self.bert = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=num_tags).to(device)
-          # self.bert = AutoModelForMaskedLM.from_pretrained("model")
-#         # self.bert = AutoModelForMaskedLM.from_pretrained(model_name)
-#         # self.linear1 = nn.Linear(28996, num_tags)
-#         self.crf = CRF(num_tags)#batch_first = True
-
-#     def return_emissions(self, input_ids, attention_mask, labels, inference = True):
-#         if inference == True:
-#             self.bert.eval()
-#         outputs = self.bert(input_ids.to(device), attention_mask = attention_mask.to(device), labels=labels.to(device))
-#         # emissions = outputs.logits
-#         # emissions = outputs.logits[:, :, :num_tags]
-#         emissions = self.linear1(outputs.logits)
-#         emissions = torch.transpose(emissions, 0, 1)
-
-#         return emissions
-
-#     def forward(self, input_ids, mask, labels):
-#         outputs = self.bert(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
-#         # emissions = outputs.logits
-#         emissions = self.linear1(outputs.logits)
-#         # emissions = outputs.logits[:, :, :num_tags]
-#         emissions = torch.transpose(emissions, 0, 1)
-#         labels = torch.transpose(labels, 0, 1)
-#         loss = self.crf(emissions.to(device), labels.to(device))
-#         return -loss
-
-# model = CustomBERTModel(num_tags = num_tags) # You can pass the parameters if required to have more flexible model
-# model.to(torch.device(device)) ## can be gpu
-# # optim = AdamW(model.parameters(), lr=1e-4)
-# optim = AdamW(model.crf.parameters(), lr=1e-3)
-
-# # 1e-4 works for crf
-
-# # optim = AdamW(
-# #     [
-# #         {'params': model.base.parameters()}, 
-# #         {"params": model.crf.parameters(), "lr": 1e-6},
-# #     ],
-# #     lr=5e-5,
-# # )
-
-
-# for epoch in range(5):
-#     print("Epoch: ", epoch)
-#     for input_ids, mask, labels in train_dataloader:
-#         optim.zero_grad()
-#         loss = model.forward(input_ids, mask, labels)
-#         loss.backward()
-#         optim.step()
-    
-#     print(f"loss on epoch {epoch} = {loss}")
-    
-#     results, label_tags = crf_decoder()
-#     measure_results(results, label_tags)
+        print('Best Scores (F1 Micro, F1 Macro, Precision, Recall): ', best_scores)
+        model.save_pretrained(save_dir, push_to_hub=False)
 
 
 
+elif MODEL_TYPE == 'CRF':
 
+    ######################################################################
+    # CRF
+    ######################################################################
 
+    # CRF TRAINING SCRIPT
+    class CustomBERTModel(nn.Module):
+        def __init__(self, num_tags = 15):
+            
+            super(CustomBERTModel, self).__init__()
+            
+            self.bert = AutoModelForMaskedLM.from_pretrained("model")#MODEL_NAME
+            self.crf = CRF(num_tags)#batch_first = True
 
+        def return_emissions(self, input_ids, attention_mask, labels, inference = True):
+            
+            if inference == True:
+                self.bert.eval()
 
+            outputs = self.bert(input_ids.to(device), attention_mask = attention_mask.to(device), labels=labels.to(device))
+            emissions = torch.softmax(outputs.logits[:, :, :NUM_TAGS], dim = -1)
+            
+            emissions = torch.transpose(emissions, 0, 1)
+            return emissions
 
+        def forward(self, input_ids, mask, labels):
+            
+            outputs = self.bert(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
+            emissions = torch.softmax(outputs.logits[:, :, :NUM_TAGS], dim = -1)
+            
+            emissions = torch.transpose(emissions, 0, 1)
+            labels = torch.transpose(labels, 0, 1)
+            
+            loss = self.crf(emissions.to(device), labels.to(device))
+            return -loss
 
+    model = CustomBERTModel(num_tags = NUM_TAGS).to(torch.device(device)) ## can be gpu
 
+    # optim = AdamW(model.parameters(), lr=LR)
+    # optim = AdamW(model.crf.parameters(), lr=1e-4)
+    optim = AdamW(
+        [
+            {'params': model.base.parameters()}, 
+            {"params": model.crf.parameters(), "lr": 5e-5},
+        ],
+        lr=5e-6,
+    )
 
+    scheduler = get_linear_schedule_with_warmup(optim, len(train_dataloader), len(train_dataloader)*EPOCHS, last_epoch = -1 )
 
-
-
-
-
-
-
-
-# GENERAL DEBUGGING AND STUFF
-
-# model.eval()
-# print("OUTPUT LOGITS SHAPE: ", outputs.logits.shape)
-# outputs = outputs.logits.argmax(dim = 2)
-# a, b = outputs.shape
-
-# print('RESULTS: ')
-# results = [[i2tag_train[outputs[i, j].item()] for j in range(b)] for i in range(a)]
-# print(results) 
-
-# print("LABELS: ")
-# label_tags = [[i2tag_train[labels[i, j].item()] for j in range(b)] for i in range(a)] 
-# print(label_tags)
-
-# true_tags = list(itertools.chain(*label_tags))
-# pred_tags = list(itertools.chain(*results))
-
-# for tag in i2tag_train.values():
-#     tp = 0
-#     fp = 0
-#     fn = 0
-#     for result, label in zip(true_tags, pred_tags):
-#         if result == tag and label == tag:
-#             tp += 1
-#         if result == tag and label != tag:
-#             fp += 1
-#         if result != tag and label == tag:
-#             fn += 1
-
-#     precision = round(tp / (tp + fp + 1e-6))
-#     recall = round(tp / (tp + fn + 1e-6))
-#     f1 = round((2 * precision * recall) / (precision + recall + 1e-6))
-    
-#     print("Tag: ", tag, ", Precision: ", precision, ", Recall: ", recall, ", F1: ", f1)
-
-# true_tags = label_tags#list(itertools.chain(*label_tags))
-# pred_tags = results#list(itertools.chain(*results))
-# # print out the table as above
-# evaluate(true_tags, pred_tags, verbose=True) 
-
-# # calculate overall metrics
-# prec, rec, f1 = evaluate(true_tags, pred_tags, verbose=False)
-
-# calculate overall metrics
-# prec, rec, f1 = evaluate(true_tags, pred_tags, verbose=False)
-
-# def write_predictions(sentences, outFile):
-#   fOut = open(outFile, 'w')
-#   for y in sentences:
-#     fOut.write("\n".join(y[1:len(y)-1]))  #Skip start and end tokens
-#     fOut.write("\n\n")
-
-# write_predictions(results, 'results')
-# write_predictions(labels, 'labels')   #Performance on dev set
-# print('conlleval:')
-# print(subprocess.Popen('paste dev dev_pred | perl conlleval.pl -d "\t"', shell=True, stdout=subprocess.PIPE,stderr=subprocess.STDOUT).communicate()[0].decode('UTF-8'))
-
-
-    # def print_predictions(self, words, tags):
-    #   Y_pred = self.inference(words)
-    #   for i in range(len(words)):
-    #     print("----------------------------")
-    #     print(" ".join([f"{words[i][j]}/{Y_pred[i][j]}/{tags[i][j]}" for j in range(len(words[i]))]))
-    #     print("Predicted:\t", Y_pred[i])
-    #     print("Gold:\t\t", tags[i])
-
-
-    # print(f"loss on epoch {epoch} = {totalLoss}")
-# print('\nexample training')
-# print('sentence')
-# print(train_data[0][-1])
-# print('sentence tags')
-# print(train_data[1][-1])
-#
-# print('\nexample validation')
-# print('sentence')
-# print(val_data[0][-1])
-# print('sentence tags')
-# print(val_data[1][-1])
-
-
-
-
-######################################################################
-# Vanilla w/ Classification Layer
-######################################################################
-
-# def validate():
-#     model.eval()
-    
-#     results_full = []
-#     labels_full = []
-
-#     for input_ids, mask, labels in val_dataloader:
-#         outputs = model.forward(input_ids, mask, labels)
-#         outputs = outputs.argmax(dim = -1)
-#         a, b = outputs.shape
+    for epoch in range(EPOCHS):
+        print("Epoch: ", epoch)
         
-#         results = [[i2tag_val[outputs[i, j].item()] for j in range(b)] for i in range(a)]
-#         label_tags = [[i2tag_val[labels[i, j].item()] for j in range(b)] for i in range(a)] 
+        for input_ids, mask, labels in train_dataloader:
+            optim.zero_grad()
+            loss = model.forward(input_ids, mask, labels)
+            loss.backward()
+            optim.step()
+            if scheduler != None:
+              scheduler.step()
+
+        print(f"loss on epoch {epoch} = {loss}")
+
+        results, label_tags = crf_decoder()
+        f1_micro, f1_macro, precision, recall = measure_results(results, label_tags)
+
+        if f1_micro > best_f1:
+          best_f1 = f1_micro
+          best_scores = [f1_micro, f1_macro, precision, recall]
+
+          save_dir = "src/re_models/" + MODEL_UPLOAD_NAME + '_' + str(VERSION)
+          model.save_pretrained(save_dir, push_to_hub=False)
         
-#         results_full.append(results)
-#         labels_full.append(label_tags)
-
-#     return results_full, labels_full
+        print('Best Scores (F1 Micro, F1 Macro, Precision, Recall): ', best_scores)
 
 
-# class CustomBERTModel(nn.Module):
-#     def __init__(self, num_tags = num_tags):
-#         super(CustomBERTModel, self).__init__()
-#         self.bert = AutoModelForMaskedLM.from_pretrained(model_name)
-#         self.linear1 = nn.Linear(28996, num_tags)
-
-#     def forward(self, input_ids, mask, labels):
-#         outputs = self.bert(input_ids.to(device), attention_mask = mask.to(device), labels=labels.to(device))
-#         outputs = self.linear1(outputs.logits)
-#         return outputs
-
-
-# model = CustomBERTModel(num_tags = num_tags)
-# model.to(torch.device(device))
-# optim = AdamW(model.parameters(), lr=1e-5)
-
-# # optim = AdamW(
-# #     [
-#         # {'params': model.base.parameters()}, 
-#         # {"params": model.crf.parameters(), "lr": 1e-6},
-# #     ],
-# #     lr=5e-5,
-# # )
-
-# weights = torch.ones(num_tags)
-# weights[0] = 0
-# weights[1] = 0
-
-# print()
-# print("Class Weights: ", weights)
-# print()
-
-# criterion = nn.CrossEntropyLoss(weight = weights.to(device)) ## If required define your own criterion
-
-# # # BASELINE TRAINING SCRIPT w/ modifications
-# for epoch in range(10):
-#     print("Epoch: ", epoch)
-
-#     model.train()
-#     for input_ids, mask, labels in train_dataloader:
-#         optim.zero_grad()
-#         outputs = model.forward(input_ids, mask, labels)
-#         N, D, C = outputs.shape
-#         outputs = outputs.view(N*D, C)
-#         labels = labels.view(N*D)
-#         loss = criterion(outputs.cuda(), labels.cuda())
-#         loss.backward()
-#         optim.step()
-    
-#     print(f"loss on epoch {epoch} = {loss}")
-#     results, label_tags = validate()
-#     measure_results(results, label_tags)
-
-
-
-
-# device = torch.device('cuda')
-# torch.cuda.empty_cache()
-# device1 = cuda.get_current_device()
-# device1.reset()

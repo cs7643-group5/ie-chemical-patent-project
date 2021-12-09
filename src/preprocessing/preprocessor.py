@@ -116,10 +116,6 @@ def map2ind(tags, ner_task):
         tag2i = {t: i for i, t in enumerate(set(tag for sent in tags for tag in sent))}  
         i2tag = {i:t for t, i in tag2i.items()}
 
-    print()
-    print(tag2i)
-    print()
-
     return tag2i, i2tag
 
 

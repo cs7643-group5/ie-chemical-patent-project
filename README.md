@@ -8,16 +8,17 @@ The competition restricted us from sharing it or making it available to any othe
 Loading in the all the data needed for training is found in the preprocessing
 folder. Preprocessor corresponds to the pre-processing for named entity recognition, while ee corresponds to the relation extraction models.
 
-Loading in the data for the relation extraction models has two options. Either directly using run_ee_preprocessor or loading the data from a pickle file.
-The later is preferred when training occurs in google Colab.
+Loading in the data for the relation extraction models has two options.
+Either directly using run_ee_preprocessor or loading the data from a
+pickle file. The later is preferred when training occurs in google Colab.
 The function to store the data in the pickle file corresponds to the
 store_data() function in utils.py. This saves the file in the folder
 data as ee_data.pickle.
 
-The evaluation of task 2 occurs in ee_evaluation.py and evaluate_task2.py.
+The evaluation of task 2 occurs in ee_evaluation.py and task2_evaluate.py.
 ee_evaluation.py shares similar functions to preprocess.py
 and ee_preprocessor.py but it is tailored to the format
-needed for evaluating the model pipeline. evaluate_task2.py
+needed for evaluating the model pipeline. task2_evaluate.py
 is currently set up to only load data from pickle files.
 To save the pickle files run the store_data() function in  ee_evaluation.py
 utils.py is also set up to call this function. Two pickle files
@@ -41,8 +42,8 @@ The model architecture for the custom relation extraction model
 is  seen in the re_models folder as custom_model.py. The r_bert
 structure is seen in R_bert.py in the same folder.
 
-train_re.py is set up to take arguments using argparse. For example,
-python src/train_re.py -m 'r_bert' -d 1 -t 'colab' -b 32 -lr 1e-5 -e 10
+re_train.py is set up to take arguments using argparse. For example,
+python src/re_train.py -m 'r_bert' -d 1 -t 'colab' -b 32 -lr 1e-5 -e 10
 
 -m corresponds to the relation extraction model that is desired to be trained
 if 'r_bert' is passed the r_bert model will be used. If anything else is passed the custom model
@@ -70,7 +71,7 @@ python src/ner_evaluate.py
 One would need to modify the load directory to evaluate a newly trained model.
 
 ### Task 2
-task 2 evaluation is run with evaluate_task2.py with argument <br>
+task 2 evaluation is run with task2_evaluate.py with argument <br>
 -d corresponding to the percentage of data to be used for evaluation.
 
 Task 2 evaluation sets up a model pipeline using an NER model

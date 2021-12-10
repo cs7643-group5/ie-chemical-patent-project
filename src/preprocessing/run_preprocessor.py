@@ -7,21 +7,19 @@
 import preprocessor
 from transformers import AdamW, AutoTokenizer, AutoModelForMaskedLM, BertForSequenceClassification, AutoModelForTokenClassification, AutoModel
 from transformers import AutoModelForTokenClassification, AutoModel, get_linear_schedule_with_warmup
-from seqeval.metrics import classification_report
 import torch, itertools
-from conlleval import evaluate
 from torchcrf import CRF
 import torch.nn as nn
-from numba import cuda 
+# from numba import cuda
 import numpy as np
 
 
 # Torch Device
 if torch.cuda.is_available():
     device = torch.device('cuda')
-    torch.cuda.empty_cache()
-    device1 = cuda.get_current_device()
-    device1.reset()
+    # torch.cuda.empty_cache()
+    # device1 = cuda.get_current_device()
+    # device1.reset()
 else:
     device = torch.device('cpu')
 

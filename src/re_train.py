@@ -21,6 +21,12 @@ from preprocessing import ee_preprocessor
 from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
 
 
+##########################################################################################
+# count_parameters, epoch_time, evaluate, evaluate_acc, and train functions have been
+# adapted and repurposed from the Georgia Tech CS 7650 project 3 assignment written by
+# Ashutosh Baheti (ashutosh.baheti@cc.gatech.edu)
+##########################################################################################
+
 # count the number of trainable parameters in the model
 def count_parameters(model: nn.Module):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)

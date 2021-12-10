@@ -1,5 +1,19 @@
 # ie-chemical-patent-project
 
+## Model Access
+The model files are too large to submit to gradescope for the project
+and are too large to push to the repository. As a temporary solution
+the models will be publicly available through a google drive link.
+
+For the folder ner_models please follow this link: https://drive.google.com/drive/folders/1CUYnCoA7eHxIzq3Cdput1tBuXoCfbXj3?usp=sharing
+
+For the folder re_models please follow this link: https://drive.google.com/drive/folders/1JiZuBrWVeHyuCCqn5YfZnZjg2gswhkqi?usp=sharing
+
+Both of these folders should be downloaded and placed in the src directory to 
+be accessed by the training and evaluation scripts.
+
+
+
 ## Dataset
 The data can be obtained from the ChEMU competition through the following link. http://chemu2020.eng.unimelb.edu.au.
 The competition restricted us from sharing it or making it available to any other party. To anyone training or evaluating our models, please download the data from the link above and place the training and development sets in the data folder.

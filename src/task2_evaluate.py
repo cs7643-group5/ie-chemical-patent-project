@@ -54,8 +54,8 @@ if __name__ == '__main__':
     ####################################################################################################################
     bert_model.resize_token_embeddings(len(biobert_tokenizer))
     # model_re = custom_model.RelationClassifier(bert_model).to(device)
-    model_re = R_bert.RelationClassifier(bert_model).to(device)
     # model_re.load_state_dict(torch.load("src/re_models/re_custom_model.pt", map_location=device))
+    model_re = R_bert.RelationClassifier(bert_model).to(device)
     model_re.load_state_dict(torch.load("src/re_models/r_bert_model_best.pt", map_location=device))
 
     model_ner = AutoModelForMaskedLM.from_pretrained(model_name).to(device)

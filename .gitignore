@@ -16,3 +16,4 @@ src/ner_models/ner_task_2_v4/
 src/re_models/r_bert_model_best.pt
 src/re_models/re_custom_model.pt
 src/ner_models/ner_task_2_v4
+src/ner_models/ner_task_1_v2
